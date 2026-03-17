@@ -511,8 +511,8 @@ namespace EveOPreview.View
 
 			if (selectedGroup.ClientsOrder.ContainsValue(toonToAdd))
 			{
-				MessageBox.Show($"{toonToAdd} is already part of this group.");
-				return;
+                MessageBox.Show($"{toonToAdd} 已经存在于该分组中。");
+                return;
 			}
 
 			var nextOrderNumber = selectedGroup.ClientsOrder.Any() ? selectedGroup.ClientsOrder.Max(x => x.Key) + 1 : 1;
@@ -614,8 +614,8 @@ namespace EveOPreview.View
 
         private void addNewGroupButton_Click(object sender, EventArgs e)
         {
-			var newName = "New Cycle Group";
-			var countGroupsWithSameName = CycleGroups.Count(x => x.Description.StartsWith(newName));
+            var newName = "新分组";
+            var countGroupsWithSameName = CycleGroups.Count(x => x.Description.StartsWith(newName));
 
 			if (countGroupsWithSameName > 0)
 			{
@@ -653,14 +653,14 @@ namespace EveOPreview.View
                 return;
             }
 
-            cycleGroupForwardHotkey1Text.Text = "Listening...";
+            cycleGroupForwardHotkey1Text.Text = "监听中...";
 			this.Enabled = false;
             var lastKeyUp = WaitForNextKeyUp();
 			this.Enabled = true;
 
 			if (string.IsNullOrEmpty(lastKeyUp))
 			{ 
-				cycleGroupForwardHotkey1Text.Text = "Error";
+				cycleGroupForwardHotkey1Text.Text = "错误";
 				return;
             }
 
@@ -684,30 +684,37 @@ namespace EveOPreview.View
             _capturedKeyData = null;
             this.KeyPreview = true;
 
-            // Use KeyData to get both the key and the modifiers (Ctrl, Alt, Shift)
+            // 绑定事件
             KeyEventHandler handler = (s, e) => _capturedKeyData = e.KeyData;
             this.KeyUp += handler;
 
-			var sw = Stopwatch.StartNew();
-            while (_capturedKeyData == null)
+            try
             {
-                Application.DoEvents();
-                System.Threading.Thread.Sleep(10);
+                var sw = Stopwatch.StartNew();
+                while (_capturedKeyData == null)
+                {
+                    Application.DoEvents();
+                    System.Threading.Thread.Sleep(10);
 
-				if (sw.ElapsedMilliseconds > 10000)
-				{
-					MessageBox.Show("Nothing captured for 10 seconds. This feature it not very reliable, especially if there is an existing conflicting hotkey. If you are having issues please close Eve-O Preview and manually modify the config json instead.");
-					return string.Empty;
-				}
+                    // 10秒超时判定
+                    if (sw.ElapsedMilliseconds > 10000)
+                    {
+                        MessageBox.Show("10秒内未捕获到任何按键。此功能可能不太稳定，尤其是当存在快捷键冲突时。如果遇到问题，请关闭 Eve-O Preview 并手动修改 config.json 配置文件。");
+                        return string.Empty;
+                    }
+                }
+
+                // 成功捕获按键
+                KeysConverter converter = new KeysConverter();
+                string keyString = converter.ConvertToString(_capturedKeyData);
+                MessageBox.Show("已捕获新快捷键。该设置将在您下次重新启动 Eve-O Preview 时生效。");
+
+                return keyString;
             }
-
-            this.KeyUp -= handler;
-
-            KeysConverter converter = new KeysConverter();
-            string keyString = converter.ConvertToString(_capturedKeyData);
-            MessageBox.Show("New hotkey captured. This will not take effect until you next close Eve-O Preview.");
-
-            return keyString;
+            finally
+            {
+                this.KeyUp -= handler;
+            }
         }
 
         private void cycleGroupForwardHotkey2Text_DoubleClick(object sender, EventArgs e)
@@ -719,14 +726,14 @@ namespace EveOPreview.View
                 return;
             }
 
-            cycleGroupForwardHotkey2Text.Text = "Listening...";
+            cycleGroupForwardHotkey2Text.Text = "监听中...";
             this.Enabled = false;
             var lastKeyUp = WaitForNextKeyUp();
             this.Enabled = true;
 
             if (string.IsNullOrEmpty(lastKeyUp))
             {
-                cycleGroupForwardHotkey2Text.Text = "Error";
+                cycleGroupForwardHotkey2Text.Text = "错误";
                 return;
             }
 
@@ -752,14 +759,14 @@ namespace EveOPreview.View
                 return;
             }
 
-            cycleGroupBackwardHotkey1Text.Text = "Listening...";
+            cycleGroupBackwardHotkey1Text.Text = "监听中...";
             this.Enabled = false;
             var lastKeyUp = WaitForNextKeyUp();
             this.Enabled = true;
 
             if (string.IsNullOrEmpty(lastKeyUp))
             {
-                cycleGroupBackwardHotkey1Text.Text = "Error";
+                cycleGroupBackwardHotkey1Text.Text = "错误";
                 return;
             }
 
@@ -785,14 +792,14 @@ namespace EveOPreview.View
                 return;
             }
 
-            cycleGroupBackwardHotkey2Text.Text = "Listening...";
+            cycleGroupBackwardHotkey2Text.Text = "监听中...";
             this.Enabled = false;
             var lastKeyUp = WaitForNextKeyUp();
             this.Enabled = true;
 
             if (string.IsNullOrEmpty(lastKeyUp))
             {
-                cycleGroupBackwardHotkey2Text.Text = "Error";
+                cycleGroupBackwardHotkey2Text.Text = "错误";
                 return;
             }
 

@@ -514,6 +514,8 @@ namespace EveOPreview.Services
             foreach (KeyValuePair<IntPtr, IThumbnailView> entry in this._thumbnailViews)
             {
                 entry.Value.TitleFontSettings = this._configuration.TitleFontSettings;
+                // 让悬浮窗把自己的标题重新赋给自己一次，触发重新读取备注的逻辑
+                entry.Value.Title = entry.Value.Title;
             }
 
             this.EnableViewEvents();

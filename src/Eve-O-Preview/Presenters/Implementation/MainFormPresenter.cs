@@ -72,6 +72,9 @@ namespace EveOPreview.Presenters
 
             // 触发配置保存的全局通知
             await this._mediator.Send(new SaveConfiguration());
+
+            // 借用刷新字体的全局通知，来触发悬浮窗重绘
+            await this._mediator.Publish(new EveOPreview.Mediator.Messages.ThumbnailFontTitleSettingsUpdated());
         }
 
         private void Activate()
