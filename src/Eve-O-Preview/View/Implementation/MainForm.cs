@@ -11,7 +11,7 @@ using System.Windows.Forms;
 
 namespace EveOPreview.View
 {
-	public partial class MainForm : Form, IMainFormView
+	public partial class MainForm : Form
 	{
 		#region Private fields
 		private readonly ApplicationContext _context;

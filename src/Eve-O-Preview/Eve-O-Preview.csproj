@@ -103,6 +103,8 @@
   </PropertyGroup>
   <ItemGroup>
     <Reference Include="Microsoft.CSharp" />
+    <Reference Include="PresentationCore" />
+    <Reference Include="PresentationFramework" />
     <Reference Include="System" />
     <Reference Include="System.Data" />
     <Reference Include="System.Deployment" />
@@ -112,6 +114,7 @@
     <Reference Include="System.Runtime" />
     <Reference Include="System.Threading.Tasks" />
     <Reference Include="System.Windows.Forms" />
+    <Reference Include="System.Xaml" />
     <Reference Include="System.XML" />
     <Reference Include="System.Xml.Linq" />
     <Reference Include="System.Xml.Serialization" />
@@ -188,6 +191,9 @@
     </Compile>
     <Compile Include="View\Implementation\LiveThumbnailView.cs">
       <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="View\Implementation\MainWpfWindow.xaml.cs">
+      <DependentUpon>MainWpfWindow.xaml</DependentUpon>
     </Compile>
     <Compile Include="View\Implementation\StaticThumbnailImage.cs">
       <SubType>Component</SubType>
@@ -300,6 +306,12 @@
       <ProductName>.NET Framework 3.5 SP1</ProductName>
       <Install>false</Install>
     </BootstrapperPackage>
+  </ItemGroup>
+  <ItemGroup>
+    <Page Include="View\Implementation\MainWpfWindow.xaml">
+      <SubType>Designer</SubType>
+      <Generator>MSBuild:Compile</Generator>
+    </Page>
   </ItemGroup>
   <Import Project="$(MSBuildBinPath)\Microsoft.CSharp.targets" />
   <!-- To modify your build process, add your task inside one of the targets below and uncomment it. 
