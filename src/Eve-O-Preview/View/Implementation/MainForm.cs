@@ -11,7 +11,7 @@ using System.Windows.Forms;
 
 namespace EveOPreview.View
 {
-	public partial class MainForm : Form, IMainFormView
+	public partial class MainForm : Form
 	{
 		#region Private fields
 		private readonly ApplicationContext _context;
@@ -20,151 +20,25 @@ namespace EveOPreview.View
 		private bool _suppressEvents;
 		private Size _minimumSize;
 		private Size _maximumSize;
-        #endregion
+		#endregion
 
-        public MainForm(ApplicationContext context)
-        {
-            this._context = context;
-            this._zoomAnchorMap = new Dictionary<ViewZoomAnchor, RadioButton>();
-            this._cachedThumbnailZoomAnchor = ViewZoomAnchor.NW;
-            this._suppressEvents = false;
-            this._minimumSize = new System.Drawing.Size(80, 60);
-            this._maximumSize = new System.Drawing.Size(80, 60);
+		public MainForm(ApplicationContext context)
+		{
+			this._context = context;
+			this._zoomAnchorMap = new Dictionary<ViewZoomAnchor, RadioButton>();
+			this._cachedThumbnailZoomAnchor = ViewZoomAnchor.NW;
+			this._suppressEvents = false;
+			this._minimumSize = new Size(80, 60);
+			this._maximumSize = new Size(80, 60);
 
-            InitializeComponent();
-
-            // ↓↓↓ 注意：我们即将在这里调用新的自适应布局引擎 ↓↓↓
-            BuildResponsiveLayout();
-            // ↑↑↑ 注意：我们即将在这里调用新的自适应布局引擎 ↑↑↑
+			InitializeComponent();
 
             this.ThumbnailsList.DisplayMember = "Title";
+
             this.InitZoomAnchorMap();
-        }
+		}
 
-        #region 响应式布局引擎 (完美适配所有分辨率和缩放)
-
-        private System.Windows.Forms.TableLayoutPanel responsiveLayout;
-        private System.Windows.Forms.ListBox sideMenu;
-        private System.Windows.Forms.Panel contentContainer;
-        private System.Windows.Forms.Panel[] pagePanels;
-
-        // 辅助方法：安全获取设计器中的 Panel
-        private System.Windows.Forms.Panel GetPanel(string name)
-        {
-            var controls = this.Controls.Find(name, true);
-            return controls.Length > 0 ? controls[0] as System.Windows.Forms.Panel : null;
-        }
-
-        private void BuildResponsiveLayout()
-        {
-            // 1. 强制系统级字体缩放引擎接管
-            this.AutoScaleMode = System.Windows.Forms.AutoScaleMode.Font;
-            this.Font = new System.Drawing.Font("微软雅黑", 9F, System.Drawing.FontStyle.Regular);
-
-            // 设置一个合理的最小窗口尺寸防挤压
-            this.MinimumSize = new System.Drawing.Size(550, 400);
-
-            // 允许用户通过鼠标拖拽边缘来改变窗口大小
-            this.FormBorderStyle = System.Windows.Forms.FormBorderStyle.Sizable;
-
-            // 清除原作者可能留下的最大尺寸限制
-            this.MaximumSize = new System.Drawing.Size(0, 0);
-
-            // 2. 找到设计器里原有的那个写死宽度的 TabControl
-            System.Windows.Forms.TabControl oldTabControl = null;
-            var tabs = this.Controls.Find("ContentTabControl", true);
-            if (tabs.Length > 0) oldTabControl = tabs[0] as System.Windows.Forms.TabControl;
-
-            // 3. 将原先 TabPage 里的所有设置面板提取出来
-            pagePanels = new System.Windows.Forms.Panel[]
-            {
-                GetPanel("GeneralSettingsPanel"),
-                GetPanel("ThumbnailSettingsPanel"),
-                GetPanel("ZoomSettingsPanel"),
-                GetPanel("OverlaySettingsPanel"),
-                GetPanel("ClientsPanel"),
-                GetPanel("CycleGroupPanel"),
-                GetPanel("AboutPanel")
-            };
-
-            // 4. 将这些面板从旧的 TabPage 中“拔”出来，并让它们自动填满未来的新容器
-            foreach (var panel in pagePanels)
-            {
-                if (panel != null)
-                {
-                    panel.Parent = null; // 脱离旧控件
-                    panel.Dock = System.Windows.Forms.DockStyle.Fill; // 核心：永远自动填满 100% 空间
-                    panel.AutoScroll = true; // 开启内部自动滚动，防止在极端小分辨率下内容溢出
-                }
-            }
-
-            // 5. 彻底移除并销毁旧的 TabControl（也就是那个导致右边被裁切的罪魁祸首）
-            if (oldTabControl != null)
-            {
-                this.Controls.Remove(oldTabControl);
-                oldTabControl.Dispose();
-            }
-
-            // 6. 创建全新的完美网格布局 (1行2列)
-            responsiveLayout = new System.Windows.Forms.TableLayoutPanel();
-            responsiveLayout.Dock = System.Windows.Forms.DockStyle.Fill;
-            responsiveLayout.ColumnCount = 2;
-            responsiveLayout.RowCount = 1;
-            // 核心布局逻辑：左侧列宽度【完全自适应内容】，右侧列占据【剩下的 100% 空间】
-            responsiveLayout.ColumnStyles.Add(new System.Windows.Forms.ColumnStyle(System.Windows.Forms.SizeType.AutoSize));
-            responsiveLayout.ColumnStyles.Add(new System.Windows.Forms.ColumnStyle(System.Windows.Forms.SizeType.Percent, 100F));
-
-            // 7. 创建左侧菜单栏 (使用 ListBox，完美支持任意分辨率字体缩放)
-            sideMenu = new System.Windows.Forms.ListBox();
-            sideMenu.Dock = System.Windows.Forms.DockStyle.Fill;
-            sideMenu.IntegralHeight = false; // 消除底部空白间隙
-            sideMenu.Font = new System.Drawing.Font("微软雅黑", 10F, System.Drawing.FontStyle.Regular); // 菜单字号稍大
-            sideMenu.Items.AddRange(new object[] {
-                "常规",
-                "缩略图",
-                "缩放",
-                "叠加",
-                "活动客户端",
-                "循环组",
-                "关于"
-            });
-            // 给菜单右侧加点边距，显得透气
-            sideMenu.Margin = new System.Windows.Forms.Padding(0, 0, 8, 0);
-
-            // 8. 创建右侧内容展示容器
-            contentContainer = new System.Windows.Forms.Panel();
-            contentContainer.Dock = System.Windows.Forms.DockStyle.Fill;
-            contentContainer.Margin = new System.Windows.Forms.Padding(5);
-
-            // 9. 组装网格界面
-            responsiveLayout.Controls.Add(sideMenu, 0, 0);
-            responsiveLayout.Controls.Add(contentContainer, 1, 0);
-            this.Controls.Add(responsiveLayout); // 将网格贴到主窗口上
-
-            // 10. 绑定菜单点击事件
-            sideMenu.SelectedIndexChanged += SideMenu_SelectedIndexChanged;
-
-            // 11. 默认选中第一项 "常规"
-            sideMenu.SelectedIndex = 0;
-        }
-
-        // 菜单点击时的动态切换逻辑
-        private void SideMenu_SelectedIndexChanged(object sender, EventArgs e)
-        {
-            int index = sideMenu.SelectedIndex;
-            if (index >= 0 && index < pagePanels.Length)
-            {
-                contentContainer.Controls.Clear();
-                if (pagePanels[index] != null)
-                {
-                    contentContainer.Controls.Add(pagePanels[index]); // 把对应的设置面板塞进右侧
-                }
-            }
-        }
-
-        #endregion
-
-        public List<CycleGroup> CycleGroups { get; set; }
+		public List<CycleGroup> CycleGroups { get; set; }
 
 		public bool MinimizeToTray
 		{

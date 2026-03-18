@@ -1,0 +1,560 @@
+﻿using EveOPreview.Configuration.Implementation;
+using System;
+using System.Collections.Generic;
+using System.Collections.ObjectModel;
+using System.Linq;
+using System.Windows;
+using System.Windows.Interop;
+using WinForms = System.Windows.Forms;
+using WpfControls = System.Windows.Controls;
+
+namespace EveOPreview.View.Implementation
+{
+    public class ClientItem
+    {
+        public string Title { get; set; }
+        public bool IsEnabled { get; set; }
+    }
+
+    public partial class MainWpfWindow : System.Windows.Window, IMainFormView, WinForms.IWin32Window
+    {
+        public IntPtr Handle => new WindowInteropHelper(this).EnsureHandle();
+
+        private bool _suppressEvents = false;
+        private WinForms.NotifyIcon _notifyIcon;
+        private readonly Dictionary<ViewZoomAnchor, WpfControls.RadioButton> _zoomAnchorMap;
+        private System.Drawing.Color _activeClientHighlightColor = System.Drawing.Color.Green;
+        private FontSettings _titleFontSettings = new FontSettings { Name = "Microsoft YaHei", Size = 10, Style = System.Drawing.FontStyle.Regular };
+
+        public ObservableCollection<ClientItem> ActiveClientsList { get; set; } = new ObservableCollection<ClientItem>();
+        private Dictionary<string, IThumbnailDescription> _thumbnailsMap = new Dictionary<string, IThumbnailDescription>();
+
+        // 绑定给分组管理页面的集合
+        public ObservableCollection<CycleGroup> ObservableGroups { get; set; } = new ObservableCollection<CycleGroup>();
+
+        public List<CycleGroup> CycleGroups
+        {
+            get => ObservableGroups.ToList();
+            set
+            {
+                _suppressEvents = true;
+                ObservableGroups.Clear();
+                if (value != null)
+                {
+                    foreach (var group in value)
+                    {
+                        ObservableGroups.Add(group);
+                    }
+                }
+                _suppressEvents = false;
+            }
+        }
+
+        public MainWpfWindow()
+        {
+            InitializeComponent();
+            ClientsListBox.DataContext = ActiveClientsList;
+
+            _zoomAnchorMap = new Dictionary<ViewZoomAnchor, WpfControls.RadioButton>
+            {
+                { ViewZoomAnchor.NW, RadioNW }, { ViewZoomAnchor.N, RadioN }, { ViewZoomAnchor.NE, RadioNE },
+                { ViewZoomAnchor.W, RadioW },   { ViewZoomAnchor.C, RadioC }, { ViewZoomAnchor.E, RadioE },
+                { ViewZoomAnchor.SW, RadioSW }, { ViewZoomAnchor.S, RadioS }, { ViewZoomAnchor.SE, RadioSE }
+            };
+
+            MinimizeToTrayCheckBox.Click += SettingChanged_Handler;
+            ShowThumbnailsAlwaysOnTopCheckBox.Click += SettingChanged_Handler;
+            HideThumbnailsOnLostFocusCheckBox.Click += SettingChanged_Handler;
+            EnableClientLayoutTrackingCheckBox.Click += SettingChanged_Handler;
+            HideActiveClientThumbnailCheckBox.Click += SettingChanged_Handler;
+            MinimizeInactiveClientsCheckBox.Click += SettingChanged_Handler;
+            EnablePerClientThumbnailLayoutsCheckBox.Click += SettingChanged_Handler;
+            OpacitySlider.ValueChanged += SettingChanged_Handler;
+            EnableThumbnailZoomCheckBox.Click += SettingChanged_Handler;
+            foreach (var rb in _zoomAnchorMap.Values) rb.Checked += SettingChanged_Handler;
+
+            ShowThumbnailOverlaysCheckBox.Click += SettingChanged_Handler;
+            ShowThumbnailFramesCheckBox.Click += SettingChanged_Handler;
+            EnableActiveClientHighlightCheckBox.Click += SettingChanged_Handler;
+            HighlightColorButton.Click += HighlightColorButton_Click;
+
+            ThumbWidthText.LostFocus += ThumbnailSizeChanged_Handler;
+            ThumbHeightText.LostFocus += ThumbnailSizeChanged_Handler;
+            ZoomFactorText.LostFocus += SettingChanged_Handler;
+
+            this.Closing += (s, e) =>
+            {
+                var request = new ViewCloseRequest();
+                this.FormCloseRequested?.Invoke(request);
+                e.Cancel = !request.Allow;
+            };
+
+            this.StateChanged += (s, e) =>
+            {
+                if (this.WindowState == WindowState.Minimized)
+                {
+                    if (this.MinimizeToTray) this.Hide();
+                    this.FormMinimized?.Invoke();
+                }
+            };
+
+            this.Closed += (s, e) =>
+            {
+                if (_notifyIcon != null)
+                {
+                    _notifyIcon.Visible = false;
+                    _notifyIcon.Dispose();
+                }
+                WinForms.Application.ExitThread();
+            };
+
+            this.Loaded += (s, e) => { this.FormActivated?.Invoke(); };
+
+            InitializeNotifyIcon();
+            InitializeCycleGroups();
+        }
+
+        private void SettingChanged_Handler(object sender, RoutedEventArgs e)
+        {
+            if (_suppressEvents) return;
+            ApplicationSettingsChanged?.Invoke();
+        }
+
+        private void ThumbnailSizeChanged_Handler(object sender, RoutedEventArgs e)
+        {
+            if (_suppressEvents) return;
+            ApplicationSettingsChanged?.Invoke();
+            ThumbnailsSizeChanged?.Invoke();
+        }
+
+        private void HighlightColorButton_Click(object sender, RoutedEventArgs e)
+        {
+            using (var dialog = new WinForms.ColorDialog())
+            {
+                dialog.Color = this.ActiveClientHighlightColor;
+                if (dialog.ShowDialog() == WinForms.DialogResult.OK)
+                {
+                    this.ActiveClientHighlightColor = dialog.Color;
+                    if (!_suppressEvents) ApplicationSettingsChanged?.Invoke();
+                }
+            }
+        }
+
+        public bool MinimizeToTray { get => MinimizeToTrayCheckBox.IsChecked ?? false; set { _suppressEvents = true; MinimizeToTrayCheckBox.IsChecked = value; _suppressEvents = false; } }
+        public bool ShowThumbnailsAlwaysOnTop { get => ShowThumbnailsAlwaysOnTopCheckBox.IsChecked ?? false; set { _suppressEvents = true; ShowThumbnailsAlwaysOnTopCheckBox.IsChecked = value; _suppressEvents = false; } }
+        public bool HideThumbnailsOnLostFocus { get => HideThumbnailsOnLostFocusCheckBox.IsChecked ?? false; set { _suppressEvents = true; HideThumbnailsOnLostFocusCheckBox.IsChecked = value; _suppressEvents = false; } }
+        public bool EnableClientLayoutTracking { get => EnableClientLayoutTrackingCheckBox.IsChecked ?? false; set { _suppressEvents = true; EnableClientLayoutTrackingCheckBox.IsChecked = value; _suppressEvents = false; } }
+        public bool HideActiveClientThumbnail { get => HideActiveClientThumbnailCheckBox.IsChecked ?? false; set { _suppressEvents = true; HideActiveClientThumbnailCheckBox.IsChecked = value; _suppressEvents = false; } }
+        public bool MinimizeInactiveClients { get => MinimizeInactiveClientsCheckBox.IsChecked ?? false; set { _suppressEvents = true; MinimizeInactiveClientsCheckBox.IsChecked = value; _suppressEvents = false; } }
+        public bool EnablePerClientThumbnailLayouts { get => EnablePerClientThumbnailLayoutsCheckBox.IsChecked ?? false; set { _suppressEvents = true; EnablePerClientThumbnailLayoutsCheckBox.IsChecked = value; _suppressEvents = false; } }
+        public bool EnableThumbnailZoom { get => EnableThumbnailZoomCheckBox.IsChecked ?? false; set { _suppressEvents = true; EnableThumbnailZoomCheckBox.IsChecked = value; _suppressEvents = false; } }
+        public bool ShowThumbnailOverlays { get => ShowThumbnailOverlaysCheckBox.IsChecked ?? false; set { _suppressEvents = true; ShowThumbnailOverlaysCheckBox.IsChecked = value; _suppressEvents = false; } }
+        public bool ShowThumbnailFrames { get => ShowThumbnailFramesCheckBox.IsChecked ?? false; set { _suppressEvents = true; ShowThumbnailFramesCheckBox.IsChecked = value; _suppressEvents = false; } }
+        public bool EnableActiveClientHighlight { get => EnableActiveClientHighlightCheckBox.IsChecked ?? false; set { _suppressEvents = true; EnableActiveClientHighlightCheckBox.IsChecked = value; _suppressEvents = false; } }
+        public double ThumbnailOpacity { get => OpacitySlider.Value / 100.0; set { _suppressEvents = true; OpacitySlider.Value = value * 100.0; _suppressEvents = false; } }
+
+        public System.Drawing.Size ThumbnailSize
+        {
+            get
+            {
+                int w = int.TryParse(ThumbWidthText.Text, out int parsedW) ? parsedW : 256;
+                int h = int.TryParse(ThumbHeightText.Text, out int parsedH) ? parsedH : 144;
+                return new System.Drawing.Size(w, h);
+            }
+            set
+            {
+                _suppressEvents = true;
+                ThumbWidthText.Text = value.Width.ToString();
+                ThumbHeightText.Text = value.Height.ToString();
+                _suppressEvents = false;
+            }
+        }
+
+        public int ThumbnailZoomFactor { get => int.TryParse(ZoomFactorText.Text, out int z) ? z : 2; set { _suppressEvents = true; ZoomFactorText.Text = value.ToString(); _suppressEvents = false; } }
+
+        public ViewZoomAnchor ThumbnailZoomAnchor
+        {
+            get { foreach (var kvp in _zoomAnchorMap) if (kvp.Value.IsChecked == true) return kvp.Key; return ViewZoomAnchor.NW; }
+            set { _suppressEvents = true; if (_zoomAnchorMap.TryGetValue(value, out var rb)) rb.IsChecked = true; _suppressEvents = false; }
+        }
+
+        public System.Drawing.Color ActiveClientHighlightColor
+        {
+            get => _activeClientHighlightColor;
+            set
+            {
+                _suppressEvents = true;
+                _activeClientHighlightColor = value;
+                HighlightColorButton.Background = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromArgb(value.A, value.R, value.G, value.B));
+                _suppressEvents = false;
+            }
+        }
+
+        public FontSettings TitleFontSettings
+        {
+            get
+            {
+                if (_titleFontSettings == null)
+                {
+                    _titleFontSettings = new FontSettings();
+                    _titleFontSettings.Name = "Microsoft YaHei";
+                    _titleFontSettings.Size = 10;
+                    _titleFontSettings.Style = System.Drawing.FontStyle.Regular;
+                    _titleFontSettings.ForeColor = System.Drawing.Color.White;
+                    _titleFontSettings.OutlineColor = System.Drawing.Color.Black;
+                    _titleFontSettings.OutlineWidth = 1;
+                    _titleFontSettings.PositionOffsetFromTop = 4;
+                    _titleFontSettings.PositionOffsetFromLeft = 4;
+                }
+                return _titleFontSettings;
+            }
+            set
+            {
+                if (value != null)
+                {
+                    _suppressEvents = true;
+                    _titleFontSettings = value;
+
+                    if (_titleFontSettings.ForeColor == System.Drawing.Color.Empty || _titleFontSettings.ForeColor.A == 0 || _titleFontSettings.ForeColor == System.Drawing.Color.Transparent)
+                    {
+                        _titleFontSettings.ForeColor = System.Drawing.Color.White;
+                    }
+
+                    Dispatcher.Invoke(() => FontPreviewText.Text = $"当前字体: {_titleFontSettings.Name}, {_titleFontSettings.Size}pt");
+                    _suppressEvents = false;
+                }
+            }
+        }
+
+        public void AddThumbnails(IList<IThumbnailDescription> thumbnails)
+        {
+            Dispatcher.Invoke(() =>
+            {
+                _suppressEvents = true;
+                foreach (var t in thumbnails)
+                {
+                    _thumbnailsMap[t.Title] = t;
+                    ActiveClientsList.Add(new ClientItem { Title = t.Title, IsEnabled = !t.IsDisabled });
+                }
+                _suppressEvents = false;
+            });
+        }
+
+        public void RemoveThumbnails(IList<IThumbnailDescription> thumbnails)
+        {
+            Dispatcher.Invoke(() =>
+            {
+                _suppressEvents = true;
+                foreach (var t in thumbnails)
+                {
+                    _thumbnailsMap.Remove(t.Title);
+                    var item = ActiveClientsList.FirstOrDefault(x => x.Title == t.Title);
+                    if (item != null) ActiveClientsList.Remove(item);
+                }
+                _suppressEvents = false;
+            });
+        }
+
+        private void ClientCheckBox_Click(object sender, RoutedEventArgs e)
+        {
+            if (_suppressEvents) return;
+            if (sender is WpfControls.CheckBox cb && cb.DataContext is ClientItem item)
+            {
+                item.IsEnabled = cb.IsChecked ?? false;
+                ClientsListBox.SelectedItem = item;
+
+                if (_thumbnailsMap.TryGetValue(item.Title, out var thumb))
+                {
+                    thumb.IsDisabled = !item.IsEnabled;
+                }
+
+                ThumbnailStateChanged?.Invoke(item.Title);
+                ApplicationSettingsChanged?.Invoke();
+            }
+        }
+
+        // =========================================================
+        // 分组管理逻辑
+        // =========================================================
+
+        public class GroupMemberItem : ClientItem
+        {
+            public bool IsInGroup { get; set; }
+        }
+
+        private void InitializeCycleGroups()
+        {
+            GroupsListBox.ItemsSource = ObservableGroups;
+        }
+
+        private void GroupsListBox_SelectionChanged(object sender, WpfControls.SelectionChangedEventArgs e)
+        {
+            var group = GroupsListBox.SelectedItem as CycleGroup;
+            GroupDetailsPanel.IsEnabled = group != null;
+            if (group == null) return;
+
+            _suppressEvents = true;
+
+            GroupNameText.Text = group.Description;
+
+            GroupForwardHotKeyText.Text = group.ForwardHotkeys.Count > 0 ? group.ForwardHotkeys[0] : "未设置";
+            GroupBackwardHotKeyText.Text = group.BackwardHotkeys.Count > 0 ? group.BackwardHotkeys[0] : "未设置";
+
+            var members = new List<GroupMemberItem>();
+            foreach (var client in ActiveClientsList)
+            {
+                members.Add(new GroupMemberItem
+                {
+                    Title = client.Title,
+                    IsInGroup = group.ClientsOrder.ContainsValue(client.Title)
+                });
+            }
+            GroupMembersListBox.ItemsSource = members;
+            _suppressEvents = false;
+        }
+
+        private void AddGroup_Click(object sender, RoutedEventArgs e)
+        {
+            var newGroup = new CycleGroup { Description = "新分组" };
+            ObservableGroups.Add(newGroup); 
+            GroupsListBox.SelectedItem = newGroup;
+            ApplicationSettingsChanged?.Invoke();
+        }
+
+        private void RemoveGroup_Click(object sender, RoutedEventArgs e)
+        {
+            if (GroupsListBox.SelectedItem is CycleGroup group)
+            {
+                ObservableGroups.Remove(group); 
+                ApplicationSettingsChanged?.Invoke();
+            }
+        }
+
+        private void GroupNameText_LostFocus(object sender, RoutedEventArgs e)
+        {
+            if (_suppressEvents || !(GroupsListBox.SelectedItem is CycleGroup group)) return;
+            group.Description = GroupNameText.Text;
+            GroupsListBox.Items.Refresh();
+            ApplicationSettingsChanged?.Invoke();
+        }
+
+        private void GroupMemberCheckBox_Click(object sender, RoutedEventArgs e)
+        {
+            if (_suppressEvents || !(GroupsListBox.SelectedItem is CycleGroup group) || !(sender is WpfControls.CheckBox cb)) return;
+            var member = cb.DataContext as GroupMemberItem;
+            if (member == null) return;
+
+            if (cb.IsChecked == true)
+            {
+                if (!group.ClientsOrder.ContainsValue(member.Title))
+                {
+                    int nextIndex = group.ClientsOrder.Count > 0 ? group.ClientsOrder.Keys.Max() + 1 : 1;
+                    group.ClientsOrder.Add(nextIndex, member.Title);
+                }
+            }
+            else
+            {
+                var target = group.ClientsOrder.FirstOrDefault(x => x.Value == member.Title);
+                if (target.Value != null)
+                {
+                    group.ClientsOrder.Remove(target.Key);
+                }
+            }
+            ApplicationSettingsChanged?.Invoke();
+        }
+
+        // =======================================================
+        // --- 快捷键录制逻辑 (前翻) ---
+        // =======================================================
+        private void GroupForwardHotKeyText_PreviewKeyDown(object sender, System.Windows.Input.KeyEventArgs e)
+        {
+            if (!(GroupsListBox.SelectedItem is CycleGroup group)) return;
+            e.Handled = true;
+
+            // 提取真正的按键 (处理 Alt 被识别为 System 的问题)
+            System.Windows.Input.Key wpfKey = e.Key == System.Windows.Input.Key.System ? e.SystemKey : e.Key;
+
+            // 过滤掉纯控制键和空键
+            if (wpfKey == System.Windows.Input.Key.LeftCtrl || wpfKey == System.Windows.Input.Key.RightCtrl ||
+                wpfKey == System.Windows.Input.Key.LeftAlt || wpfKey == System.Windows.Input.Key.RightAlt ||
+                wpfKey == System.Windows.Input.Key.LeftShift || wpfKey == System.Windows.Input.Key.RightShift ||
+                wpfKey == System.Windows.Input.Key.LWin || wpfKey == System.Windows.Input.Key.RWin ||
+                wpfKey == System.Windows.Input.Key.None)
+                return;
+
+            WinForms.Keys winformsKey = (WinForms.Keys)System.Windows.Input.KeyInterop.VirtualKeyFromKey(wpfKey);
+
+            if (System.Windows.Input.Keyboard.Modifiers.HasFlag(System.Windows.Input.ModifierKeys.Control)) winformsKey |= WinForms.Keys.Control;
+            if (System.Windows.Input.Keyboard.Modifiers.HasFlag(System.Windows.Input.ModifierKeys.Alt)) winformsKey |= WinForms.Keys.Alt;
+            if (System.Windows.Input.Keyboard.Modifiers.HasFlag(System.Windows.Input.ModifierKeys.Shift)) winformsKey |= WinForms.Keys.Shift;
+
+            // 【核心修复】：必须使用 InvariantString，保证底层永远能读懂 (比如输出真正的 "Alt+F9")
+            string keyName = new WinForms.KeysConverter().ConvertToInvariantString(winformsKey);
+
+            group.ForwardHotkeys.Clear();
+            group.ForwardHotkeys.Add(keyName);
+
+            GroupForwardHotKeyText.Text = keyName;
+            ApplicationSettingsChanged?.Invoke();
+        }
+
+        // 【补齐缺失的方法】
+        private void ClearForwardHotKey_Click(object sender, RoutedEventArgs e)
+        {
+            if (!(GroupsListBox.SelectedItem is CycleGroup group)) return;
+            group.ForwardHotkeys.Clear();
+            GroupForwardHotKeyText.Text = "未设置";
+            ApplicationSettingsChanged?.Invoke();
+        }
+
+        // =======================================================
+        // --- 快捷键录制逻辑 (后翻) ---
+        // =======================================================
+        private void GroupBackwardHotKeyText_PreviewKeyDown(object sender, System.Windows.Input.KeyEventArgs e)
+        {
+            if (!(GroupsListBox.SelectedItem is CycleGroup group)) return;
+            e.Handled = true;
+
+            System.Windows.Input.Key wpfKey = e.Key == System.Windows.Input.Key.System ? e.SystemKey : e.Key;
+
+            if (wpfKey == System.Windows.Input.Key.LeftCtrl || wpfKey == System.Windows.Input.Key.RightCtrl ||
+                wpfKey == System.Windows.Input.Key.LeftAlt || wpfKey == System.Windows.Input.Key.RightAlt ||
+                wpfKey == System.Windows.Input.Key.LeftShift || wpfKey == System.Windows.Input.Key.RightShift ||
+                wpfKey == System.Windows.Input.Key.LWin || wpfKey == System.Windows.Input.Key.RWin ||
+                wpfKey == System.Windows.Input.Key.None)
+                return;
+
+            WinForms.Keys winformsKey = (WinForms.Keys)System.Windows.Input.KeyInterop.VirtualKeyFromKey(wpfKey);
+
+            if (System.Windows.Input.Keyboard.Modifiers.HasFlag(System.Windows.Input.ModifierKeys.Control)) winformsKey |= WinForms.Keys.Control;
+            if (System.Windows.Input.Keyboard.Modifiers.HasFlag(System.Windows.Input.ModifierKeys.Alt)) winformsKey |= WinForms.Keys.Alt;
+            if (System.Windows.Input.Keyboard.Modifiers.HasFlag(System.Windows.Input.ModifierKeys.Shift)) winformsKey |= WinForms.Keys.Shift;
+
+            string keyName = new WinForms.KeysConverter().ConvertToInvariantString(winformsKey);
+
+            group.BackwardHotkeys.Clear();
+            group.BackwardHotkeys.Add(keyName);
+
+            GroupBackwardHotKeyText.Text = keyName;
+            ApplicationSettingsChanged?.Invoke();
+        }
+
+        // 【补齐缺失的方法】
+        private void ClearBackwardHotKey_Click(object sender, RoutedEventArgs e)
+        {
+            if (!(GroupsListBox.SelectedItem is CycleGroup group)) return;
+            group.BackwardHotkeys.Clear();
+            GroupBackwardHotKeyText.Text = "未设置";
+            ApplicationSettingsChanged?.Invoke();
+        }
+
+        // --- 活动客户端列表点击逻辑 ---
+        private void ClientsListBox_SelectionChanged(object sender, WpfControls.SelectionChangedEventArgs e)
+        {
+            if (ClientsListBox.SelectedItem is ClientItem item)
+            {
+                ClientNotePanel.IsEnabled = true;
+                SelectedClientChanged?.Invoke(item.Title);
+            }
+            else ClientNotePanel.IsEnabled = false;
+        }
+
+        private void ClientNoteText_LostFocus(object sender, RoutedEventArgs e)
+        {
+            if (ClientsListBox.SelectedItem is ClientItem item) ClientNoteUpdated?.Invoke(item.Title, ClientNoteText.Text);
+        }
+
+        public void ChangeFontButton_Click(object sender, RoutedEventArgs e)
+        {
+            using (var dialog = new WinForms.FontDialog())
+            {
+                try
+                {
+                    dialog.Font = new System.Drawing.Font(_titleFontSettings.Name, _titleFontSettings.Size, _titleFontSettings.Style);
+                    dialog.Color = _titleFontSettings.ForeColor;
+                }
+                catch { }
+
+                dialog.ShowColor = true;
+
+                if (dialog.ShowDialog() == WinForms.DialogResult.OK)
+                {
+                    _titleFontSettings.Name = dialog.Font.Name;
+                    _titleFontSettings.Size = (int)Math.Round(dialog.Font.Size);
+                    _titleFontSettings.Style = dialog.Font.Style;
+                    _titleFontSettings.ForeColor = dialog.Color;
+
+                    if (!_suppressEvents)
+                    {
+                        ApplicationSettingsChanged?.Invoke();
+                        ThumbnailsSizeChanged?.Invoke();
+                    }
+                    Dispatcher.Invoke(() => FontPreviewText.Text = $"当前字体: {_titleFontSettings.Name}, {_titleFontSettings.Size}pt");
+                }
+            }
+        }
+
+        public string ClientNote { get => ClientNoteText.Text ?? ""; set { _suppressEvents = true; ClientNoteText.Text = value ?? ""; _suppressEvents = false; } }
+        public void SetVersionInfo(string version) => Dispatcher.Invoke(() => VersionTextBlock.Text = $"版本: {version}");
+        public void DocsButton_Click(object sender, RoutedEventArgs e) => DocumentationLinkActivated?.Invoke();
+        public void Minimize() { }
+        public void RefreshZoomSettings() { }
+        public void SetDocumentationUrl(string url) { }
+        public void SetThumbnailSizeLimitations(System.Drawing.Size minimumSize, System.Drawing.Size maximumSize) { }
+        public Func<string> GetClientNameFromInput { get; set; }
+        public Action<string> SelectedClientChanged { get; set; }
+        public Action<string, string> ClientNoteUpdated { get; set; }
+        public Action ApplicationExitRequested { get; set; }
+        public Action FormActivated { get; set; }
+        public Action FormMinimized { get; set; }
+        public Action<ViewCloseRequest> FormCloseRequested { get; set; }
+        public Action ApplicationSettingsChanged { get; set; }
+        public Action ThumbnailsSizeChanged { get; set; }
+        public Action<string> ThumbnailStateChanged { get; set; }
+        public Action DocumentationLinkActivated { get; set; }
+
+        void EveOPreview.IView.Show()
+        {
+            base.Show();
+            this.FormActivated?.Invoke();
+
+            if (System.Windows.Application.Current != null)
+            {
+                System.Windows.Application.Current.Run(this);
+            }
+            else
+            {
+                new System.Windows.Application().Run(this);
+            }
+        }
+
+        private void InitializeNotifyIcon()
+        {
+            _notifyIcon = new WinForms.NotifyIcon();
+            _notifyIcon.Text = "EVE-O Preview";
+
+            try { _notifyIcon.Icon = System.Drawing.Icon.ExtractAssociatedIcon(WinForms.Application.ExecutablePath); } catch { }
+            _notifyIcon.Visible = true;
+
+            var contextMenu = new WinForms.ContextMenuStrip();
+            contextMenu.Items.Add("显示主界面", null, (s, e) => RestoreFromTray());
+            contextMenu.Items.Add("-");
+            contextMenu.Items.Add("退出程序", null, (s, e) => {
+                _notifyIcon.Visible = false;
+                ApplicationExitRequested?.Invoke();
+            });
+
+            _notifyIcon.ContextMenuStrip = contextMenu;
+            _notifyIcon.MouseDoubleClick += (s, e) => RestoreFromTray();
+        }
+
+        private void RestoreFromTray()
+        {
+            this.Show();
+            this.WindowState = WindowState.Normal;
+            this.Activate();
+        }
+
+        private void ListBoxItem_Selected(object sender, RoutedEventArgs e) { }
+    }
+}

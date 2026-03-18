@@ -1,15 +1,16 @@
 using EveOPreview.Configuration;
 using EveOPreview.Presenters;
 using EveOPreview.Services;
+using EveOPreview.Services.Implementation;
 using EveOPreview.Services.Interop;
 using EveOPreview.View;
+using EveOPreview.View.Implementation;
 using Gma.System.MouseKeyHook;
 using MediatR;
 using System;
 using System.Linq;
 using System.Threading;
 using System.Windows.Forms;
-using EveOPreview.Services.Implementation;
 
 namespace EveOPreview
 {
@@ -23,6 +24,7 @@ namespace EveOPreview
         [STAThread]
         static void Main(params string[] args)
         {
+            new System.Windows.Application();
             if (args?.Any(x => x == "--attach-debug-sidecar") == true)
             {
                 DebuggerSidecar.RunAsTheSideCar(args);
@@ -117,7 +119,7 @@ namespace EveOPreview
             controller.RegisterView<StaticThumbnailView, StaticThumbnailView>();
             controller.RegisterView<LiveThumbnailView, LiveThumbnailView>();
 
-            controller.RegisterView<IMainFormView, MainForm>();
+            controller.RegisterView<IMainFormView, MainWpfWindow>();
             controller.RegisterInstance(new ApplicationContext());
 
             return controller;

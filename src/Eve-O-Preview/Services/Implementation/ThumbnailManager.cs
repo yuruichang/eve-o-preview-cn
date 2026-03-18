@@ -162,9 +162,19 @@ namespace EveOPreview.Services
 
         public void RegisterAllHotkeys(List<CycleGroup> cycleGroups)
         {
+            // 1. 防御性检查：如果配置里还没有循环组数据，直接返回，防止空引用崩溃
+            if (cycleGroups == null)
+            {
+                return;
+            }
+
             foreach (var cycleGroup in cycleGroups)
             {
-                RegisterCycleClientHotkey(cycleGroup);
+                // 2. 二次保护：防止列表里面有空元素
+                if (cycleGroup != null)
+                {
+                    RegisterCycleClientHotkey(cycleGroup);
+                }
             }
         }
 
@@ -180,7 +190,8 @@ namespace EveOPreview.Services
             {
                 foreach (var hotkey in keys)
                 {
-                    if (e.KeyCode == hotkey)
+                    // 【核心绝杀】：必须使用 e.KeyData！只有 KeyData 才包含了 Ctrl/Alt/Shift 组合键的状态！
+                    if (e.KeyData == hotkey)
                     {
                         if (this._windowManager.IsCurrentlySwitching)
                         {
@@ -193,12 +204,13 @@ namespace EveOPreview.Services
                     }
                 }
             };
-            
+
             _keyboardMouseEvents.KeyUp += (sender, e) =>
             {
                 foreach (var hotkey in keys)
                 {
-                    if (e.KeyCode == hotkey)
+                    // 这里也必须同步修改为 KeyData
+                    if (e.KeyData == hotkey)
                     {
                         e.Handled = true;
                         return;
