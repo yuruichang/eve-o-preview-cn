@@ -4,8 +4,10 @@ using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Linq;
 using System.Windows;
-using System.Windows.Controls;
 using System.Windows.Interop;
+// 【关键修复】：使用别名解决 WPF 和 WinForms 的命名空间冲突
+using WinForms = System.Windows.Forms;
+using WpfControls = System.Windows.Controls;
 
 namespace EveOPreview.View.Implementation
 {
@@ -15,13 +17,17 @@ namespace EveOPreview.View.Implementation
         public bool IsEnabled { get; set; }
     }
 
-    public partial class MainWpfWindow : System.Windows.Window, IMainFormView, System.Windows.Forms.IWin32Window
+    public partial class MainWpfWindow : System.Windows.Window, IMainFormView, WinForms.IWin32Window
     {
         public IntPtr Handle => new WindowInteropHelper(this).EnsureHandle();
 
         private bool _suppressEvents = false;
 
-        private readonly Dictionary<ViewZoomAnchor, RadioButton> _zoomAnchorMap;
+        // 【核心修复】：补齐缺失的托盘图标变量定义
+        private WinForms.NotifyIcon _notifyIcon;
+
+        // 【核心修复】：显式指定使用 WPF 的 RadioButton
+        private readonly Dictionary<ViewZoomAnchor, WpfControls.RadioButton> _zoomAnchorMap;
         private System.Drawing.Color _activeClientHighlightColor = System.Drawing.Color.Green;
         private FontSettings _titleFontSettings = new FontSettings { Name = "Microsoft YaHei", Size = 10, Style = System.Drawing.FontStyle.Regular };
 
@@ -33,7 +39,8 @@ namespace EveOPreview.View.Implementation
             InitializeComponent();
             ClientsListBox.DataContext = ActiveClientsList;
 
-            _zoomAnchorMap = new Dictionary<ViewZoomAnchor, RadioButton>
+            // 【核心修复】：指定 Dictionary 的类型为 WPF 的 RadioButton
+            _zoomAnchorMap = new Dictionary<ViewZoomAnchor, WpfControls.RadioButton>
             {
                 { ViewZoomAnchor.NW, RadioNW }, { ViewZoomAnchor.N, RadioN }, { ViewZoomAnchor.NE, RadioNE },
                 { ViewZoomAnchor.W, RadioW },   { ViewZoomAnchor.C, RadioC }, { ViewZoomAnchor.E, RadioE },
@@ -67,9 +74,32 @@ namespace EveOPreview.View.Implementation
                 e.Cancel = !request.Allow;
             };
 
-            this.StateChanged += (s, e) => { if (this.WindowState == WindowState.Minimized) this.FormMinimized?.Invoke(); };
+            this.StateChanged += (s, e) =>
+            {
+                if (this.WindowState == WindowState.Minimized)
+                {
+                    if (this.MinimizeToTray)
+                    {
+                        this.Hide();
+                    }
+                    this.FormMinimized?.Invoke();
+                }
+            };
+
+            this.Closed += (s, e) =>
+            {
+                // 清理托盘图标，防止残留
+                if (_notifyIcon != null)
+                {
+                    _notifyIcon.Visible = false;
+                    _notifyIcon.Dispose();
+                }
+                WinForms.Application.ExitThread();
+            };
 
             this.Loaded += (s, e) => { this.FormActivated?.Invoke(); };
+
+            InitializeNotifyIcon();
         }
 
         private void SettingChanged_Handler(object sender, RoutedEventArgs e)
@@ -87,10 +117,10 @@ namespace EveOPreview.View.Implementation
 
         private void HighlightColorButton_Click(object sender, RoutedEventArgs e)
         {
-            using (var dialog = new System.Windows.Forms.ColorDialog())
+            using (var dialog = new WinForms.ColorDialog())
             {
                 dialog.Color = this.ActiveClientHighlightColor;
-                if (dialog.ShowDialog() == System.Windows.Forms.DialogResult.OK)
+                if (dialog.ShowDialog() == WinForms.DialogResult.OK)
                 {
                     this.ActiveClientHighlightColor = dialog.Color;
                     if (!_suppressEvents) ApplicationSettingsChanged?.Invoke();
@@ -155,27 +185,6 @@ namespace EveOPreview.View.Implementation
                 HighlightColorButton.Background = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromArgb(value.A, value.R, value.G, value.B));
                 _suppressEvents = false;
             }
-        }
-
-        private void HealFontSettings(FontSettings fs)
-        {
-            if (fs == null) return;
-            if (fs.Size < 5) fs.Size = 10;
-            if (string.IsNullOrWhiteSpace(fs.Name)) fs.Name = "Microsoft YaHei";
-
-            try
-            {
-                var colorProp = fs.GetType().GetProperty("Color");
-                if (colorProp != null)
-                {
-                    var currentColor = colorProp.GetValue(fs);
-                    if (currentColor is System.Drawing.Color c && (c.A == 0 || c == System.Drawing.Color.Empty || c == System.Drawing.Color.Transparent))
-                    {
-                        colorProp.SetValue(fs, System.Drawing.Color.White);
-                    }
-                }
-            }
-            catch { }
         }
 
         public FontSettings TitleFontSettings
@@ -246,7 +255,8 @@ namespace EveOPreview.View.Implementation
         private void ClientCheckBox_Click(object sender, RoutedEventArgs e)
         {
             if (_suppressEvents) return;
-            if (sender is CheckBox cb && cb.DataContext is ClientItem item)
+            // 【核心修复】：指定使用 WPF 的 CheckBox
+            if (sender is WpfControls.CheckBox cb && cb.DataContext is ClientItem item)
             {
                 item.IsEnabled = cb.IsChecked ?? false;
                 ClientsListBox.SelectedItem = item;
@@ -261,7 +271,7 @@ namespace EveOPreview.View.Implementation
             }
         }
 
-        private void ClientsListBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        private void ClientsListBox_SelectionChanged(object sender, WpfControls.SelectionChangedEventArgs e)
         {
             if (ClientsListBox.SelectedItem is ClientItem item)
             {
@@ -278,7 +288,7 @@ namespace EveOPreview.View.Implementation
 
         public void ChangeFontButton_Click(object sender, RoutedEventArgs e)
         {
-            using (var dialog = new System.Windows.Forms.FontDialog())
+            using (var dialog = new WinForms.FontDialog())
             {
                 try
                 {
@@ -287,14 +297,14 @@ namespace EveOPreview.View.Implementation
                 }
                 catch { }
 
-                dialog.ShowColor = true; 
+                dialog.ShowColor = true;
 
-                if (dialog.ShowDialog() == System.Windows.Forms.DialogResult.OK)
+                if (dialog.ShowDialog() == WinForms.DialogResult.OK)
                 {
                     _titleFontSettings.Name = dialog.Font.Name;
                     _titleFontSettings.Size = (int)Math.Round(dialog.Font.Size);
                     _titleFontSettings.Style = dialog.Font.Style;
-                    _titleFontSettings.ForeColor = dialog.Color; 
+                    _titleFontSettings.ForeColor = dialog.Color;
 
                     if (!_suppressEvents)
                     {
@@ -341,6 +351,32 @@ namespace EveOPreview.View.Implementation
             }
         }
 
+        private void InitializeNotifyIcon()
+        {
+            _notifyIcon = new WinForms.NotifyIcon();
+            _notifyIcon.Text = "EVE-O Preview";
+
+            try { _notifyIcon.Icon = System.Drawing.Icon.ExtractAssociatedIcon(WinForms.Application.ExecutablePath); } catch { }
+            _notifyIcon.Visible = true;
+
+            var contextMenu = new WinForms.ContextMenuStrip();
+            contextMenu.Items.Add("显示主界面", null, (s, e) => RestoreFromTray());
+            contextMenu.Items.Add("-");
+            contextMenu.Items.Add("退出程序", null, (s, e) => {
+                _notifyIcon.Visible = false;
+                ApplicationExitRequested?.Invoke();
+            });
+
+            _notifyIcon.ContextMenuStrip = contextMenu;
+            _notifyIcon.MouseDoubleClick += (s, e) => RestoreFromTray();
+        }
+
+        private void RestoreFromTray()
+        {
+            this.Show();
+            this.WindowState = WindowState.Normal;
+            this.Activate();
+        }
         private void ListBoxItem_Selected(object sender, RoutedEventArgs e) { }
     }
 }

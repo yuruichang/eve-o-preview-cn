@@ -162,7 +162,7 @@
                         </Border>
 
                         <StackPanel Grid.Row="3" x:Name="ClientNotePanel" IsEnabled="False">
-                            <TextBlock Text="选中客户端的自定义别名 (Client Note):" FontSize="13" Margin="0,0,0,6" Foreground="#444444"/>
+                            <TextBlock Text="选中客户端的自定义别名:" FontSize="13" Margin="0,0,0,6" Foreground="#444444"/>
                             <StackPanel Orientation="Horizontal">
                                 <TextBox x:Name="ClientNoteText" Width="240" FontSize="14" Padding="4" BorderBrush="#D1D5DA" LostFocus="ClientNoteText_LostFocus"/>
                                 <TextBlock Text="(点击空白处保存)" Foreground="#959DA5" Margin="10,0,0,0" VerticalAlignment="Center" FontSize="12"/>
