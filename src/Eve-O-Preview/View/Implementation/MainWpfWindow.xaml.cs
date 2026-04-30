@@ -5,7 +5,6 @@ using System.Collections.ObjectModel;
 using System.Linq;
 using System.Windows;
 using System.Windows.Interop;
-// 【关键修复】：使用别名解决 WPF 和 WinForms 的命名空间冲突
 using WinForms = System.Windows.Forms;
 using WpfControls = System.Windows.Controls;
 
@@ -22,24 +21,42 @@ namespace EveOPreview.View.Implementation
         public IntPtr Handle => new WindowInteropHelper(this).EnsureHandle();
 
         private bool _suppressEvents = false;
-
-        // 【核心修复】：补齐缺失的托盘图标变量定义
         private WinForms.NotifyIcon _notifyIcon;
-
-        // 【核心修复】：显式指定使用 WPF 的 RadioButton
         private readonly Dictionary<ViewZoomAnchor, WpfControls.RadioButton> _zoomAnchorMap;
         private System.Drawing.Color _activeClientHighlightColor = System.Drawing.Color.Green;
         private FontSettings _titleFontSettings = new FontSettings { Name = "Microsoft YaHei", Size = 10, Style = System.Drawing.FontStyle.Regular };
 
+        // Cache KeysConverter to avoid per-keystroke allocations during hotkey recording
+        private static readonly WinForms.KeysConverter _keysConverter = new WinForms.KeysConverter();
+
         public ObservableCollection<ClientItem> ActiveClientsList { get; set; } = new ObservableCollection<ClientItem>();
         private Dictionary<string, IThumbnailDescription> _thumbnailsMap = new Dictionary<string, IThumbnailDescription>();
+
+        public ObservableCollection<CycleGroup> ObservableGroups { get; set; } = new ObservableCollection<CycleGroup>();
+
+        public List<CycleGroup> CycleGroups
+        {
+            get => ObservableGroups.ToList();
+            set
+            {
+                _suppressEvents = true;
+                ObservableGroups.Clear();
+                if (value != null)
+                {
+                    foreach (var group in value)
+                    {
+                        ObservableGroups.Add(group);
+                    }
+                }
+                _suppressEvents = false;
+            }
+        }
 
         public MainWpfWindow()
         {
             InitializeComponent();
             ClientsListBox.DataContext = ActiveClientsList;
 
-            // 【核心修复】：指定 Dictionary 的类型为 WPF 的 RadioButton
             _zoomAnchorMap = new Dictionary<ViewZoomAnchor, WpfControls.RadioButton>
             {
                 { ViewZoomAnchor.NW, RadioNW }, { ViewZoomAnchor.N, RadioN }, { ViewZoomAnchor.NE, RadioNE },
@@ -78,17 +95,13 @@ namespace EveOPreview.View.Implementation
             {
                 if (this.WindowState == WindowState.Minimized)
                 {
-                    if (this.MinimizeToTray)
-                    {
-                        this.Hide();
-                    }
+                    if (this.MinimizeToTray) this.Hide();
                     this.FormMinimized?.Invoke();
                 }
             };
 
             this.Closed += (s, e) =>
             {
-                // 清理托盘图标，防止残留
                 if (_notifyIcon != null)
                 {
                     _notifyIcon.Visible = false;
@@ -100,6 +113,7 @@ namespace EveOPreview.View.Implementation
             this.Loaded += (s, e) => { this.FormActivated?.Invoke(); };
 
             InitializeNotifyIcon();
+            InitializeCycleGroups();
         }
 
         private void SettingChanged_Handler(object sender, RoutedEventArgs e)
@@ -139,12 +153,7 @@ namespace EveOPreview.View.Implementation
         public bool ShowThumbnailOverlays { get => ShowThumbnailOverlaysCheckBox.IsChecked ?? false; set { _suppressEvents = true; ShowThumbnailOverlaysCheckBox.IsChecked = value; _suppressEvents = false; } }
         public bool ShowThumbnailFrames { get => ShowThumbnailFramesCheckBox.IsChecked ?? false; set { _suppressEvents = true; ShowThumbnailFramesCheckBox.IsChecked = value; _suppressEvents = false; } }
         public bool EnableActiveClientHighlight { get => EnableActiveClientHighlightCheckBox.IsChecked ?? false; set { _suppressEvents = true; EnableActiveClientHighlightCheckBox.IsChecked = value; _suppressEvents = false; } }
-
-        public double ThumbnailOpacity
-        {
-            get => OpacitySlider.Value / 100.0;
-            set { _suppressEvents = true; OpacitySlider.Value = value * 100.0; _suppressEvents = false; }
-        }
+        public double ThumbnailOpacity { get => OpacitySlider.Value / 100.0; set { _suppressEvents = true; OpacitySlider.Value = value * 100.0; _suppressEvents = false; } }
 
         public System.Drawing.Size ThumbnailSize
         {
@@ -163,11 +172,7 @@ namespace EveOPreview.View.Implementation
             }
         }
 
-        public int ThumbnailZoomFactor
-        {
-            get => int.TryParse(ZoomFactorText.Text, out int z) ? z : 2;
-            set { _suppressEvents = true; ZoomFactorText.Text = value.ToString(); _suppressEvents = false; }
-        }
+        public int ThumbnailZoomFactor { get => int.TryParse(ZoomFactorText.Text, out int z) ? z : 2; set { _suppressEvents = true; ZoomFactorText.Text = value.ToString(); _suppressEvents = false; } }
 
         public ViewZoomAnchor ThumbnailZoomAnchor
         {
@@ -255,7 +260,6 @@ namespace EveOPreview.View.Implementation
         private void ClientCheckBox_Click(object sender, RoutedEventArgs e)
         {
             if (_suppressEvents) return;
-            // 【核心修复】：指定使用 WPF 的 CheckBox
             if (sender is WpfControls.CheckBox cb && cb.DataContext is ClientItem item)
             {
                 item.IsEnabled = cb.IsChecked ?? false;
@@ -269,6 +273,166 @@ namespace EveOPreview.View.Implementation
                 ThumbnailStateChanged?.Invoke(item.Title);
                 ApplicationSettingsChanged?.Invoke();
             }
+        }
+
+        public class GroupMemberItem : ClientItem
+        {
+            public bool IsInGroup { get; set; }
+        }
+
+        private void InitializeCycleGroups()
+        {
+            GroupsListBox.ItemsSource = ObservableGroups;
+        }
+
+        private void GroupsListBox_SelectionChanged(object sender, WpfControls.SelectionChangedEventArgs e)
+        {
+            var group = GroupsListBox.SelectedItem as CycleGroup;
+            GroupDetailsPanel.IsEnabled = group != null;
+            if (group == null) return;
+
+            _suppressEvents = true;
+
+            GroupNameText.Text = group.Description;
+
+            GroupForwardHotKeyText.Text = group.ForwardHotkeys.Count > 0 ? group.ForwardHotkeys[0] : "未设置";
+            GroupBackwardHotKeyText.Text = group.BackwardHotkeys.Count > 0 ? group.BackwardHotkeys[0] : "未设置";
+
+            var members = new List<GroupMemberItem>();
+            foreach (var client in ActiveClientsList)
+            {
+                members.Add(new GroupMemberItem
+                {
+                    Title = client.Title,
+                    IsInGroup = group.ClientsOrder.ContainsValue(client.Title)
+                });
+            }
+            GroupMembersListBox.ItemsSource = members;
+            _suppressEvents = false;
+        }
+
+        private void AddGroup_Click(object sender, RoutedEventArgs e)
+        {
+            var newGroup = new CycleGroup { Description = "新分组" };
+            ObservableGroups.Add(newGroup); 
+            GroupsListBox.SelectedItem = newGroup;
+            ApplicationSettingsChanged?.Invoke();
+        }
+
+        private void RemoveGroup_Click(object sender, RoutedEventArgs e)
+        {
+            if (GroupsListBox.SelectedItem is CycleGroup group)
+            {
+                ObservableGroups.Remove(group); 
+                ApplicationSettingsChanged?.Invoke();
+            }
+        }
+
+        private void GroupNameText_LostFocus(object sender, RoutedEventArgs e)
+        {
+            if (_suppressEvents || !(GroupsListBox.SelectedItem is CycleGroup group)) return;
+            group.Description = GroupNameText.Text;
+            GroupsListBox.Items.Refresh();
+            ApplicationSettingsChanged?.Invoke();
+        }
+
+        private void GroupMemberCheckBox_Click(object sender, RoutedEventArgs e)
+        {
+            if (_suppressEvents || !(GroupsListBox.SelectedItem is CycleGroup group) || !(sender is WpfControls.CheckBox cb)) return;
+            var member = cb.DataContext as GroupMemberItem;
+            if (member == null) return;
+
+            if (cb.IsChecked == true)
+            {
+                if (!group.ClientsOrder.ContainsValue(member.Title))
+                {
+                    int nextIndex = group.ClientsOrder.Count > 0 ? group.ClientsOrder.Keys.Max() + 1 : 1;
+                    group.ClientsOrder.Add(nextIndex, member.Title);
+                }
+            }
+            else
+            {
+                var target = group.ClientsOrder.FirstOrDefault(x => x.Value == member.Title);
+                if (target.Value != null)
+                {
+                    group.ClientsOrder.Remove(target.Key);
+                }
+            }
+            ApplicationSettingsChanged?.Invoke();
+        }
+
+        private void GroupForwardHotKeyText_PreviewKeyDown(object sender, System.Windows.Input.KeyEventArgs e)
+        {
+            if (!(GroupsListBox.SelectedItem is CycleGroup group)) return;
+            e.Handled = true;
+
+            System.Windows.Input.Key wpfKey = e.Key == System.Windows.Input.Key.System ? e.SystemKey : e.Key;
+
+            if (wpfKey == System.Windows.Input.Key.LeftCtrl || wpfKey == System.Windows.Input.Key.RightCtrl ||
+                wpfKey == System.Windows.Input.Key.LeftAlt || wpfKey == System.Windows.Input.Key.RightAlt ||
+                wpfKey == System.Windows.Input.Key.LeftShift || wpfKey == System.Windows.Input.Key.RightShift ||
+                wpfKey == System.Windows.Input.Key.LWin || wpfKey == System.Windows.Input.Key.RWin ||
+                wpfKey == System.Windows.Input.Key.None)
+                return;
+
+            WinForms.Keys winformsKey = (WinForms.Keys)System.Windows.Input.KeyInterop.VirtualKeyFromKey(wpfKey);
+
+            if (System.Windows.Input.Keyboard.Modifiers.HasFlag(System.Windows.Input.ModifierKeys.Control)) winformsKey |= WinForms.Keys.Control;
+            if (System.Windows.Input.Keyboard.Modifiers.HasFlag(System.Windows.Input.ModifierKeys.Alt)) winformsKey |= WinForms.Keys.Alt;
+            if (System.Windows.Input.Keyboard.Modifiers.HasFlag(System.Windows.Input.ModifierKeys.Shift)) winformsKey |= WinForms.Keys.Shift;
+
+            string keyName = _keysConverter.ConvertToInvariantString(winformsKey);
+
+            group.ForwardHotkeys.Clear();
+            group.ForwardHotkeys.Add(keyName);
+
+            GroupForwardHotKeyText.Text = keyName;
+            ApplicationSettingsChanged?.Invoke();
+        }
+
+        private void ClearForwardHotKey_Click(object sender, RoutedEventArgs e)
+        {
+            if (!(GroupsListBox.SelectedItem is CycleGroup group)) return;
+            group.ForwardHotkeys.Clear();
+            GroupForwardHotKeyText.Text = "未设置";
+            ApplicationSettingsChanged?.Invoke();
+        }
+
+        private void GroupBackwardHotKeyText_PreviewKeyDown(object sender, System.Windows.Input.KeyEventArgs e)
+        {
+            if (!(GroupsListBox.SelectedItem is CycleGroup group)) return;
+            e.Handled = true;
+
+            System.Windows.Input.Key wpfKey = e.Key == System.Windows.Input.Key.System ? e.SystemKey : e.Key;
+
+            if (wpfKey == System.Windows.Input.Key.LeftCtrl || wpfKey == System.Windows.Input.Key.RightCtrl ||
+                wpfKey == System.Windows.Input.Key.LeftAlt || wpfKey == System.Windows.Input.Key.RightAlt ||
+                wpfKey == System.Windows.Input.Key.LeftShift || wpfKey == System.Windows.Input.Key.RightShift ||
+                wpfKey == System.Windows.Input.Key.LWin || wpfKey == System.Windows.Input.Key.RWin ||
+                wpfKey == System.Windows.Input.Key.None)
+                return;
+
+            WinForms.Keys winformsKey = (WinForms.Keys)System.Windows.Input.KeyInterop.VirtualKeyFromKey(wpfKey);
+
+            if (System.Windows.Input.Keyboard.Modifiers.HasFlag(System.Windows.Input.ModifierKeys.Control)) winformsKey |= WinForms.Keys.Control;
+            if (System.Windows.Input.Keyboard.Modifiers.HasFlag(System.Windows.Input.ModifierKeys.Alt)) winformsKey |= WinForms.Keys.Alt;
+            if (System.Windows.Input.Keyboard.Modifiers.HasFlag(System.Windows.Input.ModifierKeys.Shift)) winformsKey |= WinForms.Keys.Shift;
+
+            string keyName = _keysConverter.ConvertToInvariantString(winformsKey);
+
+            group.BackwardHotkeys.Clear();
+            group.BackwardHotkeys.Add(keyName);
+
+            GroupBackwardHotKeyText.Text = keyName;
+            ApplicationSettingsChanged?.Invoke();
+        }
+
+        private void ClearBackwardHotKey_Click(object sender, RoutedEventArgs e)
+        {
+            if (!(GroupsListBox.SelectedItem is CycleGroup group)) return;
+            group.BackwardHotkeys.Clear();
+            GroupBackwardHotKeyText.Text = "未设置";
+            ApplicationSettingsChanged?.Invoke();
         }
 
         private void ClientsListBox_SelectionChanged(object sender, WpfControls.SelectionChangedEventArgs e)
@@ -319,7 +483,57 @@ namespace EveOPreview.View.Implementation
         public string ClientNote { get => ClientNoteText.Text ?? ""; set { _suppressEvents = true; ClientNoteText.Text = value ?? ""; _suppressEvents = false; } }
         public void SetVersionInfo(string version) => Dispatcher.Invoke(() => VersionTextBlock.Text = $"版本: {version}");
         public void DocsButton_Click(object sender, RoutedEventArgs e) => DocumentationLinkActivated?.Invoke();
-        public void Minimize() { }
+        public List<string> SavedLayoutProfiles
+        {
+            get => ProfileComboBox.ItemsSource as List<string>;
+            set
+            {
+                Dispatcher.Invoke(() =>
+                {
+                    ProfileComboBox.ItemsSource = value;
+                });
+            }
+        }
+
+        public Action<string> SaveLayoutProfileRequested { get; set; }
+        public Action<string> LoadLayoutProfileRequested { get; set; }
+        public Action<string> DeleteLayoutProfileRequested { get; set; }
+
+        private void SaveProfile_Click(object sender, RoutedEventArgs e)
+        {
+            string profileName = ProfileComboBox.Text;
+            if (!string.IsNullOrWhiteSpace(profileName) && profileName != "输入新名字或选择...")
+            {
+                SaveLayoutProfileRequested?.Invoke(profileName);
+            }
+        }
+
+        private void LoadProfile_Click(object sender, RoutedEventArgs e)
+        {
+            string profileName = ProfileComboBox.Text;
+            if (!string.IsNullOrWhiteSpace(profileName) && profileName != "输入新名字或选择...")
+            {
+                LoadLayoutProfileRequested?.Invoke(profileName);
+            }
+        }
+
+        private void DeleteProfile_Click(object sender, RoutedEventArgs e)
+        {
+            string profileName = ProfileComboBox.Text;
+            if (!string.IsNullOrWhiteSpace(profileName) && profileName != "输入新名字或选择...")
+            {
+                DeleteLayoutProfileRequested?.Invoke(profileName);
+                ProfileComboBox.Text = "输入新名字或选择...";
+            }
+        }
+
+        public void Minimize()
+        {
+            Dispatcher.Invoke(() =>
+            {
+                this.WindowState = WindowState.Minimized;
+            });
+        }
         public void RefreshZoomSettings() { }
         public void SetDocumentationUrl(string url) { }
         public void SetThumbnailSizeLimitations(System.Drawing.Size minimumSize, System.Drawing.Size maximumSize) { }
@@ -334,21 +548,24 @@ namespace EveOPreview.View.Implementation
         public Action ThumbnailsSizeChanged { get; set; }
         public Action<string> ThumbnailStateChanged { get; set; }
         public Action DocumentationLinkActivated { get; set; }
-        public List<CycleGroup> CycleGroups { get; set; } = new List<CycleGroup>();
 
         void EveOPreview.IView.Show()
         {
-            base.Show();
             this.FormActivated?.Invoke();
 
-            if (System.Windows.Application.Current != null)
+            var app = System.Windows.Application.Current ?? new System.Windows.Application();
+            app.MainWindow = this;
+
+            if (this.WindowState == WindowState.Minimized && this.MinimizeToTray)
             {
-                System.Windows.Application.Current.Run(this);
+                this.Hide();  
             }
             else
             {
-                new System.Windows.Application().Run(this);
+                base.Show();  
             }
+
+            app.Run();
         }
 
         private void InitializeNotifyIcon()
@@ -377,6 +594,7 @@ namespace EveOPreview.View.Implementation
             this.WindowState = WindowState.Normal;
             this.Activate();
         }
+
         private void ListBoxItem_Selected(object sender, RoutedEventArgs e) { }
     }
 }

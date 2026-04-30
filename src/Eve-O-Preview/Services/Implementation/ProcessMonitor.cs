@@ -9,6 +9,7 @@ namespace EveOPreview.Services.Implementation
         #region Private constants
         private const string DEFAULT_PROCESS_NAME = "ExeFile";
         private const string CURRENT_PROCESS_NAME = "EVE-O Preview";
+        private const int INITIAL_CACHE_CAPACITY = 64;
         #endregion
 
         #region Private fields
@@ -18,8 +19,8 @@ namespace EveOPreview.Services.Implementation
 
         public ProcessMonitor()
         {
-            this._processCache = new Dictionary<IntPtr, string>(512);
-            
+            this._processCache = new Dictionary<IntPtr, string>(INITIAL_CACHE_CAPACITY);
+
             // This field cannot be initialized properly in constructor
             // At the moment this code is executed the main application window is not yet initialized
             this._currentProcessInfo = new ProcessInfo(IntPtr.Zero, "");
@@ -33,8 +34,10 @@ namespace EveOPreview.Services.Implementation
 
         private IProcessInfo GetCurrentProcessInfo()
         {
-            var currentProcess = Process.GetCurrentProcess();
-            return new ProcessInfo(currentProcess.MainWindowHandle, currentProcess.MainWindowTitle);
+            using (var currentProcess = Process.GetCurrentProcess())
+            {
+                return new ProcessInfo(currentProcess.MainWindowHandle, currentProcess.MainWindowTitle);
+            }
         }
 
         public IProcessInfo GetMainProcess()
@@ -57,7 +60,6 @@ namespace EveOPreview.Services.Implementation
         {
             ICollection<IProcessInfo> result = new List<IProcessInfo>(this._processCache.Count);
 
-            // TODO Lock list here just in case
             foreach (KeyValuePair<IntPtr, string> entry in this._processCache)
             {
                 result.Add(new ProcessInfo(entry.Key, entry.Value));
@@ -72,41 +74,65 @@ namespace EveOPreview.Services.Implementation
             updatedProcesses = new List<IProcessInfo>(16);
             removedProcesses = new List<IProcessInfo>(16);
 
-            IList<IntPtr> knownProcesses = new List<IntPtr>(this._processCache.Keys);
-            foreach (Process process in Process.GetProcesses())
+            // Use HashSet for O(1) removal instead of List's O(n) Remove
+            HashSet<IntPtr> knownProcesses = new HashSet<IntPtr>(this._processCache.Keys);
+
+            Process[] processes = Process.GetProcesses();
+            try
             {
-                string processName = process.ProcessName;
-
-                if (!this.IsMonitoredProcess(processName))
+                foreach (Process process in processes)
                 {
-                    continue;
-                }
+                    string processName;
+                    IntPtr mainWindowHandle;
+                    string mainWindowTitle;
 
-                IntPtr mainWindowHandle = process.MainWindowHandle;
-                if (mainWindowHandle == IntPtr.Zero)
-                {
-                    continue; // No need to monitor non-visual processes
-                }
-
-                string mainWindowTitle = process.MainWindowTitle;
-                this._processCache.TryGetValue(mainWindowHandle, out string cachedTitle);
-
-                if (cachedTitle == null)
-                {
-                    // This is a new process in the list
-                    this._processCache.Add(mainWindowHandle, mainWindowTitle);
-                    addedProcesses.Add(new ProcessInfo(mainWindowHandle, mainWindowTitle));
-                }
-                else
-                {
-                    // This is an already known process
-                    if (cachedTitle != mainWindowTitle)
+                    try
                     {
-                        this._processCache[mainWindowHandle] = mainWindowTitle;
-                        updatedProcesses.Add(new ProcessInfo(mainWindowHandle, mainWindowTitle));
+                        processName = process.ProcessName;
+                        mainWindowHandle = process.MainWindowHandle;
+                        if (mainWindowHandle == IntPtr.Zero)
+                        {
+                            continue; // No need to monitor non-visual processes
+                        }
+                        mainWindowTitle = process.MainWindowTitle;
+                    }
+                    catch
+                    {
+                        continue; // Process may have exited between enumeration and property access
                     }
 
-                    knownProcesses.Remove(mainWindowHandle);
+                    if (!this.IsMonitoredProcess(processName))
+                    {
+                        continue;
+                    }
+
+                    this._processCache.TryGetValue(mainWindowHandle, out string cachedTitle);
+
+                    if (cachedTitle == null)
+                    {
+                        // This is a new process in the list
+                        this._processCache.Add(mainWindowHandle, mainWindowTitle);
+                        addedProcesses.Add(new ProcessInfo(mainWindowHandle, mainWindowTitle));
+                    }
+                    else
+                    {
+                        // This is an already known process
+                        if (cachedTitle != mainWindowTitle)
+                        {
+                            this._processCache[mainWindowHandle] = mainWindowTitle;
+                            updatedProcesses.Add(new ProcessInfo(mainWindowHandle, mainWindowTitle));
+                        }
+
+                        knownProcesses.Remove(mainWindowHandle); // O(1) with HashSet
+                    }
+                }
+            }
+            finally
+            {
+                // Ensure Process objects are properly disposed
+                foreach (Process process in processes)
+                {
+                    process.Dispose();
                 }
             }
 

@@ -32,21 +32,25 @@ namespace EveOPreview.Services.Implementation
         public static void LaunchTheSideCar()
         {
             bool isDebuggerPresent = false;
-            KernelNativeMethods.CheckRemoteDebuggerPresent(Process.GetCurrentProcess().Handle, ref isDebuggerPresent);
 
-            if (!isDebuggerPresent && !Debugger.IsAttached)
+            using (var currentProcess = Process.GetCurrentProcess())
             {
-                string currentExe = Process.GetCurrentProcess().MainModule.FileName;
-                int myPid = Process.GetCurrentProcess().Id;
+                KernelNativeMethods.CheckRemoteDebuggerPresent(currentProcess.Handle, ref isDebuggerPresent);
 
-                ProcessStartInfo newProcess = new ProcessStartInfo();
-                newProcess.FileName = currentExe;
-                newProcess.Arguments = $"--attach-debug-sidecar {myPid}";
-                newProcess.CreateNoWindow = true;
-                newProcess.WindowStyle = ProcessWindowStyle.Hidden;
-                newProcess.UseShellExecute = false;
+                if (!isDebuggerPresent && !Debugger.IsAttached)
+                {
+                    string currentExe = currentProcess.MainModule.FileName;
+                    int myPid = currentProcess.Id;
 
-                Process.Start(newProcess);
+                    ProcessStartInfo newProcess = new ProcessStartInfo();
+                    newProcess.FileName = currentExe;
+                    newProcess.Arguments = $"--attach-debug-sidecar {myPid}";
+                    newProcess.CreateNoWindow = true;
+                    newProcess.WindowStyle = ProcessWindowStyle.Hidden;
+                    newProcess.UseShellExecute = false;
+
+                    using (Process.Start(newProcess)) { } // Dispose the Process object after launch
+                }
             }
         }
 

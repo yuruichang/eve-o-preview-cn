@@ -104,6 +104,9 @@ namespace EveOPreview.Services.Implementation
             }
         }
 
+        // Cache the struct size to avoid repeated Marshal.SizeOf calls
+        private static readonly int _windowPlacementSize = Marshal.SizeOf(typeof(WINDOWPLACEMENT));
+
         public void MinimizeWindow(IntPtr handle, bool enableAnimation)
         {
             if (enableAnimation)
@@ -113,7 +116,7 @@ namespace EveOPreview.Services.Implementation
             else
             {
                 WINDOWPLACEMENT param = new WINDOWPLACEMENT();
-                param.length = Marshal.SizeOf(typeof(WINDOWPLACEMENT));
+                param.length = _windowPlacementSize;
                 User32NativeMethods.GetWindowPlacement(handle, ref param);
                 param.showCmd = WINDOWPLACEMENT.SW_MINIMIZE;
                 User32NativeMethods.SetWindowPlacement(handle, ref param);
@@ -157,32 +160,51 @@ namespace EveOPreview.Services.Implementation
 
         public Image GetStaticThumbnail(IntPtr source)
         {
-            var sourceContext = User32NativeMethods.GetDC(source);
+            IntPtr sourceContext = IntPtr.Zero;
+            IntPtr destContext = IntPtr.Zero;
+            IntPtr bitmap = IntPtr.Zero;
 
-            User32NativeMethods.GetClientRect(source, out RECT windowRect);
-
-            var width = windowRect.Right - windowRect.Left;
-            var height = windowRect.Bottom - windowRect.Top;
-
-            // Check if there is anything to make thumbnail of
-            if ((width < WINDOW_SIZE_THRESHOLD) || (height < WINDOW_SIZE_THRESHOLD))
+            try
             {
-                return null;
+                sourceContext = User32NativeMethods.GetDC(source);
+
+                User32NativeMethods.GetClientRect(source, out RECT windowRect);
+
+                var width = windowRect.Right - windowRect.Left;
+                var height = windowRect.Bottom - windowRect.Top;
+
+                // Check if there is anything to make thumbnail of
+                if ((width < WINDOW_SIZE_THRESHOLD) || (height < WINDOW_SIZE_THRESHOLD))
+                {
+                    return null;
+                }
+
+                destContext = Gdi32NativeMethods.CreateCompatibleDC(sourceContext);
+                bitmap = Gdi32NativeMethods.CreateCompatibleBitmap(sourceContext, width, height);
+
+                var oldBitmap = Gdi32NativeMethods.SelectObject(destContext, bitmap);
+                Gdi32NativeMethods.BitBlt(destContext, 0, 0, width, height, sourceContext, 0, 0, Gdi32NativeMethods.SRCCOPY);
+                Gdi32NativeMethods.SelectObject(destContext, oldBitmap);
+
+                Image image = Image.FromHbitmap(bitmap);
+                return image;
             }
-
-            var destContext = Gdi32NativeMethods.CreateCompatibleDC(sourceContext);
-            var bitmap = Gdi32NativeMethods.CreateCompatibleBitmap(sourceContext, width, height);
-
-            var oldBitmap = Gdi32NativeMethods.SelectObject(destContext, bitmap);
-            Gdi32NativeMethods.BitBlt(destContext, 0, 0, width, height, sourceContext, 0, 0, Gdi32NativeMethods.SRCCOPY);
-            Gdi32NativeMethods.SelectObject(destContext, oldBitmap);
-            Gdi32NativeMethods.DeleteDC(destContext);
-            User32NativeMethods.ReleaseDC(source, sourceContext);
-
-            Image image = Image.FromHbitmap(bitmap);
-            Gdi32NativeMethods.DeleteObject(bitmap);
-
-            return image;
+            finally
+            {
+                // Clean up GDI resources in reverse order of creation
+                if (bitmap != IntPtr.Zero)
+                {
+                    Gdi32NativeMethods.DeleteObject(bitmap);
+                }
+                if (destContext != IntPtr.Zero)
+                {
+                    Gdi32NativeMethods.DeleteDC(destContext);
+                }
+                if (sourceContext != IntPtr.Zero)
+                {
+                    User32NativeMethods.ReleaseDC(source, sourceContext);
+                }
+            }
         }
     }
 }

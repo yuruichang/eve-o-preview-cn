@@ -1,16 +1,29 @@
-﻿using System.Collections.Generic;
+﻿using Newtonsoft.Json;
+using System.Collections.Generic;
 using System.Drawing;
 using System.Linq;
 using System.Windows.Forms;
-using Newtonsoft.Json;
+using System.Windows.Media.Imaging;
 
 namespace EveOPreview.Configuration.Implementation
 {
+    public class LayoutProfile
+    {
+        [JsonProperty("PerClientLayout")]
+        public Dictionary<string, Dictionary<string, Point>> PerClientLayout { get; set; } = new Dictionary<string, Dictionary<string, Point>>();
+
+        [JsonProperty("FlatLayout")]
+        public Dictionary<string, Point> FlatLayout { get; set; } = new Dictionary<string, Point>();
+    }
+
     sealed class ThumbnailConfiguration : IThumbnailConfiguration
     {
         #region Private fields
         private bool _enablePerClientThumbnailLayouts;
         private bool _enableClientLayoutTracking;
+
+        // Cache KeysConverter to avoid per-call allocations
+        private static readonly KeysConverter _keysConverter = new KeysConverter();
         #endregion
 
         public ThumbnailConfiguration()
@@ -18,9 +31,8 @@ namespace EveOPreview.Configuration.Implementation
             this.ConfigVersion = 2;
 
             this.CycleGroups = new List<CycleGroup>();
-
-            // 【新增】初始化字典
             this.ClientNotes = new Dictionary<string, string>();
+            this.SavedLayoutProfiles = new Dictionary<string, LayoutProfile>();  
 
             this.PerClientActiveClientHighlightColor = new Dictionary<string, Color>
             {
@@ -49,7 +61,7 @@ namespace EveOPreview.Configuration.Implementation
             this.EnablePerClientThumbnailLayouts = false;
 
             this.HideThumbnailsOnLostFocus = false;
-            this.HideThumbnailsDelay = 2; // 2 thumbnails refresh cycles (1.0 sec)
+            this.HideThumbnailsDelay = 2;
 
             this.ThumbnailSize = new Size(384, 216);
             this.ThumbnailMinimumSize = new Size(192, 108);
@@ -67,26 +79,28 @@ namespace EveOPreview.Configuration.Implementation
             this.EnableActiveClientHighlight = false;
             this.ActiveClientHighlightColor = Color.GreenYellow;
             this.ActiveClientHighlightThickness = 3;
-            
+
             this.TitleFontSettings = new FontSettings();
             this.TitleFontSettings.Name = "Arial";
             this.TitleFontSettings.Size = 14.25f;
-            this.TitleFontSettings.ForeColor = Color.FromArgb(255,255,165,0);
+            this.TitleFontSettings.ForeColor = Color.FromArgb(255, 255, 165, 0);
             this.TitleFontSettings.Style = FontStyle.Regular;
             this.TitleFontSettings.OutlineColor = Color.Black;
             this.TitleFontSettings.OutlineWidth = 3.0f;
             this.TitleFontSettings.PositionOffsetFromLeft = 10;
-            this.TitleFontSettings.PositionOffsetFromLeft = 5;
+            this.TitleFontSettings.PositionOffsetFromTop = 5;
 
             this.LoginThumbnailLocation = new Point(5, 5);
         }
-
 
         [JsonProperty("ConfigVersion")]
         public int ConfigVersion { get; set; }
 
         [JsonProperty("CycleGroups")]
         public List<CycleGroup> CycleGroups { get; set; } = new List<CycleGroup>();
+
+        [JsonProperty("SavedLayoutProfiles")]
+        public Dictionary<string, LayoutProfile> SavedLayoutProfiles { get; set; }
 
         [JsonProperty("PerClientActiveClientHighlightColor")]
         public Dictionary<string, Color> PerClientActiveClientHighlightColor { get; set; }
@@ -100,11 +114,9 @@ namespace EveOPreview.Configuration.Implementation
         [JsonProperty("ThumbnailsOpacity")]
         public double ThumbnailOpacity { get; set; }
 
-        // 【新增】用于JSON序列化的属性
         [JsonProperty("ClientNotes")]
         public Dictionary<string, string> ClientNotes { get; set; }
 
-        // 【新增】实现获取和设置备注的方法
         public string GetClientNote(string currentClient)
         {
             return this.ClientNotes.TryGetValue(currentClient, out string note) ? note : string.Empty;
@@ -114,7 +126,6 @@ namespace EveOPreview.Configuration.Implementation
         {
             if (string.IsNullOrWhiteSpace(note))
             {
-                // 如果备注为空，则从字典中移除，保持配置文件整洁
                 this.ClientNotes.Remove(currentClient);
             }
             else
@@ -198,26 +209,16 @@ namespace EveOPreview.Configuration.Implementation
 
         public Point GetThumbnailLocation(string currentClient, string activeClient, Point defaultLocation)
         {
-            Point location;
-
-            // What this code does:
-            // If Per-Client layouts are enabled
-            //    and client name is known
-            //    and there is a separate thumbnails layout for this client
-            //    and this layout contains an entry for the current client
-            // then return that entry
-            // otherwise try to get client layout from the flat all-clients layout
-            // If there is no layout too then use the default one
             if (this.EnablePerClientThumbnailLayouts && !string.IsNullOrEmpty(activeClient))
             {
                 Dictionary<string, Point> layoutSource;
-                if (this.PerClientLayout.TryGetValue(activeClient, out layoutSource) && layoutSource.TryGetValue(currentClient, out location))
+                if (this.PerClientLayout.TryGetValue(activeClient, out layoutSource) && layoutSource.TryGetValue(currentClient, out Point location))
                 {
                     return location;
                 }
             }
 
-            return this.FlatLayout.TryGetValue(currentClient, out location) ? location : defaultLocation;
+            return this.FlatLayout.TryGetValue(currentClient, out Point locationFlat) ? locationFlat : defaultLocation;
         }
 
         public void SetThumbnailLocation(string currentClient, string activeClient, Point location)
@@ -249,7 +250,6 @@ namespace EveOPreview.Configuration.Implementation
         {
             ClientLayout layout;
             this.ClientLayout.TryGetValue(currentClient, out layout);
-
             return layout;
         }
 
@@ -263,8 +263,7 @@ namespace EveOPreview.Configuration.Implementation
             string hotkey;
             if (this.ClientHotkey.TryGetValue(currentClient, out hotkey))
             {
-                // Protect from incorrect values
-                object rawValue = (new KeysConverter()).ConvertFromInvariantString(hotkey);
+                object rawValue = _keysConverter.ConvertFromInvariantString(hotkey);
                 return rawValue != null ? (Keys)rawValue : Keys.None;
             }
 
@@ -273,12 +272,12 @@ namespace EveOPreview.Configuration.Implementation
 
         public void SetClientHotkey(string currentClient, Keys hotkey)
         {
-            this.ClientHotkey[currentClient] = (new KeysConverter()).ConvertToInvariantString(hotkey);
+            this.ClientHotkey[currentClient] = _keysConverter.ConvertToInvariantString(hotkey);
         }
 
         public Keys StringToKey(string hotkey)
         {
-            object rawValue = (new KeysConverter()).ConvertFromInvariantString(hotkey);
+            object rawValue = _keysConverter.ConvertFromInvariantString(hotkey);
             return rawValue != null ? (Keys)rawValue : Keys.None;
         }
 
@@ -297,9 +296,6 @@ namespace EveOPreview.Configuration.Implementation
             this.DisableThumbnail[currentClient] = isDisabled;
         }
 
-        /// <summary>
-        /// Applies restrictions to different parameters of the config
-        /// </summary>
         public void ApplyRestrictions()
         {
             this.ThumbnailRefreshPeriod = ThumbnailConfiguration.ApplyRestrictions(this.ThumbnailRefreshPeriod, 300, 1000);
@@ -323,6 +319,68 @@ namespace EveOPreview.Configuration.Implementation
             }
 
             return value;
+        }
+
+        public List<string> GetSavedLayoutProfiles()
+        {
+            if (this.SavedLayoutProfiles == null) this.SavedLayoutProfiles = new Dictionary<string, LayoutProfile>();
+            return this.SavedLayoutProfiles.Keys.ToList();
+        }
+
+        public void SaveLayoutProfile(string profileName)
+        {
+            if (string.IsNullOrWhiteSpace(profileName)) return;
+            if (this.SavedLayoutProfiles == null) this.SavedLayoutProfiles = new Dictionary<string, LayoutProfile>();
+
+            var profile = new LayoutProfile();
+
+            foreach (var kvp in this.FlatLayout)
+            {
+                profile.FlatLayout[kvp.Key] = kvp.Value;
+            }
+
+            foreach (var kvp in this.PerClientLayout)
+            {
+                var innerDict = new Dictionary<string, Point>();
+                foreach (var innerKvp in kvp.Value)
+                {
+                    innerDict[innerKvp.Key] = innerKvp.Value;
+                }
+                profile.PerClientLayout[kvp.Key] = innerDict;
+            }
+
+            this.SavedLayoutProfiles[profileName] = profile;
+        }
+
+        public void LoadLayoutProfile(string profileName)
+        {
+            if (string.IsNullOrWhiteSpace(profileName) || this.SavedLayoutProfiles == null) return;
+            if (!this.SavedLayoutProfiles.TryGetValue(profileName, out var profile)) return;
+
+            this.FlatLayout.Clear();
+            foreach (var kvp in profile.FlatLayout)
+            {
+                this.FlatLayout[kvp.Key] = kvp.Value;
+            }
+
+            this.PerClientLayout.Clear();
+            foreach (var kvp in profile.PerClientLayout)
+            {
+                var innerDict = new Dictionary<string, Point>();
+                foreach (var innerKvp in kvp.Value)
+                {
+                    innerDict[innerKvp.Key] = innerKvp.Value;
+                }
+                this.PerClientLayout[kvp.Key] = innerDict;
+            }
+        }
+
+        public void DeleteLayoutProfile(string profileName)
+        {
+            if (this.SavedLayoutProfiles != null && this.SavedLayoutProfiles.ContainsKey(profileName))
+            {
+                this.SavedLayoutProfiles.Remove(profileName);
+            }
         }
     }
 }

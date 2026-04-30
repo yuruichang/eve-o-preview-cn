@@ -48,32 +48,28 @@ namespace EveOPreview.Presenters
             this.View.ApplicationExitRequested = this.ExitApplication;
             this.View.GetClientNameFromInput = this.GetClientDescriptionFromInputBox;
 
-            // 【新增】绑定新增的备注相关事件
             this.View.SelectedClientChanged = this.UpdateSelectedClient;
             this.View.ClientNoteUpdated = this.UpdateClientNote;
+            this.View.SaveLayoutProfileRequested = this.SaveLayoutProfile;
+            this.View.LoadLayoutProfileRequested = this.LoadLayoutProfile;
+            this.View.DeleteLayoutProfileRequested = this.DeleteLayoutProfile;
         }
 
-        // 【新增】当选中的客户端发生改变时，读取对应的备注并显示到 UI
         private void UpdateSelectedClient(string clientTitle)
         {
             if (string.IsNullOrEmpty(clientTitle)) return;
             this.View.ClientNote = this._configuration.GetClientNote(clientTitle);
         }
 
-        // 【新增】当 UI 输入框触发保存时，将备注写入配置并持久化
         private async void UpdateClientNote(string clientTitle, string note)
         {
             if (string.IsNullOrEmpty(clientTitle)) return;
 
-            // 写入配置内存
             this._configuration.SetClientNote(clientTitle, note);
-            // 写入本地 JSON 文件
             this._configurationStorage.Save();
 
-            // 触发配置保存的全局通知
             await this._mediator.Send(new SaveConfiguration());
 
-            // 借用刷新字体的全局通知，来触发悬浮窗重绘
             await this._mediator.Publish(new EveOPreview.Mediator.Messages.ThumbnailFontTitleSettingsUpdated());
         }
 
@@ -102,11 +98,11 @@ namespace EveOPreview.Presenters
             this.View.Hide();
         }
 
-        private void Close(ViewCloseRequest request)
+        private async void Close(ViewCloseRequest request)
         {
             if (this._exitApplication || !this.View.MinimizeToTray)
             {
-                this._mediator.Send(new StopService()).Wait();
+                await this._mediator.Send(new StopService());
 
                 this._configurationStorage.Save();
                 request.Allow = true;
@@ -131,7 +127,7 @@ namespace EveOPreview.Presenters
             this._configurationStorage.Load();
 
             this.View.CycleGroups = this._configuration.CycleGroups;
-
+            this.View.SavedLayoutProfiles = this._configuration.GetSavedLayoutProfiles();
             this.View.MinimizeToTray = this._configuration.MinimizeToTray;
 
             this.View.ThumbnailOpacity = this._configuration.ThumbnailOpacity;
@@ -272,7 +268,6 @@ namespace EveOPreview.Presenters
 
         private void OpenDocumentationLink()
         {
-            // TODO Move out to a separate service / presenter / message handler
             ProcessStartInfo processStartInfo = new ProcessStartInfo(new Uri(MainFormPresenter.DISCORD_URL).AbsoluteUri);
             Process.Start(processStartInfo);
         }
@@ -287,6 +282,28 @@ namespace EveOPreview.Presenters
         {
             this._exitApplication = true;
             this.View.Close();
+        }
+        private async void SaveLayoutProfile(string profileName)
+        {
+            this._configuration.SaveLayoutProfile(profileName);
+            this._configurationStorage.Save();   
+            this.View.SavedLayoutProfiles = this._configuration.GetSavedLayoutProfiles();  
+            await this._mediator.Send(new SaveConfiguration());
+        }
+
+        private async void LoadLayoutProfile(string profileName)
+        {
+            this._configuration.LoadLayoutProfile(profileName);
+            this._configurationStorage.Save();
+            await this._mediator.Send(new SaveConfiguration());
+        }
+
+        private async void DeleteLayoutProfile(string profileName)
+        {
+            this._configuration.DeleteLayoutProfile(profileName);
+            this._configurationStorage.Save();
+            this.View.SavedLayoutProfiles = this._configuration.GetSavedLayoutProfiles();
+            await this._mediator.Send(new SaveConfiguration());
         }
     }
 }

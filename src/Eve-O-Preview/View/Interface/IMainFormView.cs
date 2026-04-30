@@ -36,6 +36,10 @@ namespace EveOPreview.View
         FontSettings TitleFontSettings { get; set; }
 
         List<CycleGroup> CycleGroups { get; set; }
+        List<string> SavedLayoutProfiles { get; set; }
+        Action<string> SaveLayoutProfileRequested { get; set; }
+        Action<string> LoadLayoutProfileRequested { get; set; }
+        Action<string> DeleteLayoutProfileRequested { get; set; }
 
         string ClientNote { get; set; }
         Action<string> SelectedClientChanged { get; set; }

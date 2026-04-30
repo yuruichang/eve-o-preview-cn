@@ -20,9 +20,9 @@ namespace EveOPreview.View
 		private bool _suppressEvents;
 		private Size _minimumSize;
 		private Size _maximumSize;
-		#endregion
+        #endregion
 
-		public MainForm(ApplicationContext context)
+        public MainForm(ApplicationContext context)
 		{
 			this._context = context;
 			this._zoomAnchorMap = new Dictionary<ViewZoomAnchor, RadioButton>();
@@ -229,30 +229,61 @@ namespace EveOPreview.View
             }
         }
 
+        // 【新增标记】用于拦截启动初期的强行渲染
+        private bool _isStartingUp = true;
+
         public new void Show()
-		{
-			// Registers the current instance as the application's Main Form
-			this._context.MainForm = this;
+        {
+            this._isStartingUp = true;
 
-			this._suppressEvents = true;
-			this.FormActivated?.Invoke();
-			this._suppressEvents = false;
+            // 这行代码会去读取配置，并可能会触发下方的 Minimize() 方法
+            this._suppressEvents = true;
+            this.FormActivated?.Invoke();
+            this._suppressEvents = false;
 
-			Application.Run(this._context);
-		}
+            if (this.MinimizeToTray)
+            {
+                // 确保托盘图标的底层句柄被建立，否则右下角没图标
+                if (!this.IsHandleCreated)
+                {
+                    this.CreateHandle();
+                }
 
-		public void SetThumbnailSizeLimitations(Size minimumSize, Size maximumSize)
+                // 【核心魔法】不绑定 MainForm！彻底掐断系统强行显示窗口的源头
+                this._context.MainForm = null;
+
+                // 因为解除了主窗口绑定，必须手动接管退出逻辑
+                this.FormClosed += (s, e) => Application.ExitThread();
+            }
+            else
+            {
+                this._context.MainForm = this;
+            }
+
+            this._isStartingUp = false;
+
+            // 开启消息循环，此时没有任何窗口被强制要求显示
+            Application.Run(this._context);
+        }
+
+        public void SetThumbnailSizeLimitations(Size minimumSize, Size maximumSize)
 		{
 			this._minimumSize = minimumSize;
 			this._maximumSize = maximumSize;
 		}
 
-		public void Minimize()
-		{
-			this.WindowState = FormWindowState.Minimized;
-		}
+        public void Minimize()
+        {
+            // 【核心拦截】如果是在启动加载阶段，直接吃掉这个指令，绝不触发底层的强制绘制！
+            if (this._isStartingUp)
+            {
+                return;
+            }
 
-		public void SetVersionInfo(string version)
+            this.WindowState = FormWindowState.Minimized;
+        }
+
+        public void SetVersionInfo(string version)
 		{
 			this.VersionLabel.Text = version;
 		}

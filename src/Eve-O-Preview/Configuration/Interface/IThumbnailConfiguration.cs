@@ -9,7 +9,6 @@ namespace EveOPreview.Configuration
     {
         List<CycleGroup> CycleGroups { get; set; }
 
-        // 【新增】保存客户端备注的字典
         Dictionary<string, string> ClientNotes { get; set; }
 
         Dictionary<string, Color> PerClientActiveClientHighlightColor { get; set; }
@@ -60,7 +59,6 @@ namespace EveOPreview.Configuration
         void SetClientHotkey(string currentClient, Keys hotkey);
         Keys StringToKey(string hotkey);
 
-        // 【新增】获取和设置备注的方法
         string GetClientNote(string currentClient);
         void SetClientNote(string currentClient, string note);
 
@@ -70,5 +68,10 @@ namespace EveOPreview.Configuration
         void ToggleThumbnail(string currentClient, bool isDisabled);
 
         void ApplyRestrictions();
+
+        List<string> GetSavedLayoutProfiles();
+        void SaveLayoutProfile(string profileName);
+        void LoadLayoutProfile(string profileName);
+        void DeleteLayoutProfile(string profileName);
     }
 }

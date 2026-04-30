@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.ComponentModel;
 using System.Drawing;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 using System.Windows.Threading;
@@ -36,13 +37,15 @@ namespace EveOPreview.Services
         private readonly DispatcherTimer _thumbnailUpdateTimer;
         private readonly IThumbnailViewFactory _thumbnailViewFactory;
         private readonly Dictionary<IntPtr, IThumbnailView> _thumbnailViews;
+        private readonly Dictionary<string, IThumbnailView> _thumbnailViewsByTitle;
+        private readonly HashSet<IntPtr> _knownClientHandles;
         private IKeyboardMouseEvents _keyboardMouseEvents;
 
         private (IntPtr Handle, string Title) _activeClient;
         private IntPtr _externalApplication;
 
         private readonly object _locationChangeNotificationSyncRoot;
-        private (IntPtr Handle, string Title, string ActiveClient, Point Location, int Delay) _enqueuedLocationChangeNotification;
+        private LocationChangeNotification _enqueuedLocationChangeNotification;
 
         private bool _ignoreViewEvents;
         private bool _isHoverEffectActive;
@@ -51,6 +54,16 @@ namespace EveOPreview.Services
         private int _hideThumbnailsDelay;
 
         private List<HotkeyHandler> _cycleClientHotkeyHandlers = new List<HotkeyHandler>();
+
+        /// <summary>Mutable holder for the deferred location-change notification.</summary>
+        private sealed class LocationChangeNotification
+        {
+            public IntPtr Handle;
+            public string Title;
+            public string ActiveClient;
+            public Point Location;
+            public int Delay;
+        }
         #endregion
 
         public ThumbnailManager(IMediator mediator, IThumbnailConfiguration configuration, IProcessMonitor processMonitor, IWindowManager windowManager, IThumbnailViewFactory factory, IKeyboardMouseEvents keyboardMouseEvents)
@@ -70,9 +83,11 @@ namespace EveOPreview.Services
 
             this._refreshCycleCount = 0;
             this._locationChangeNotificationSyncRoot = new object();
-            this._enqueuedLocationChangeNotification = (IntPtr.Zero, null, null, Point.Empty, -1);
+            this._enqueuedLocationChangeNotification = new LocationChangeNotification { Handle = IntPtr.Zero, Delay = -1 };
 
             this._thumbnailViews = new Dictionary<IntPtr, IThumbnailView>();
+            this._thumbnailViewsByTitle = new Dictionary<string, IThumbnailView>(StringComparer.OrdinalIgnoreCase);
+            this._knownClientHandles = new HashSet<IntPtr>();
 
             //  DispatcherTimer setup
             this._thumbnailUpdateTimer = new DispatcherTimer();
@@ -86,12 +101,14 @@ namespace EveOPreview.Services
 
         public IThumbnailView GetClientByTitle(string title)
         {
-            return _thumbnailViews.FirstOrDefault(x => x.Value.Title == title).Value;
+            _thumbnailViewsByTitle.TryGetValue(title, out var view);
+            return view;
         }
 
         public IThumbnailView GetClientByPointer(IntPtr ptr)
         {
-            return _thumbnailViews.FirstOrDefault(x => x.Key == ptr).Value;
+            _thumbnailViews.TryGetValue(ptr, out var view);
+            return view;
         }
 
         public IThumbnailView GetActiveClient()
@@ -112,25 +129,17 @@ namespace EveOPreview.Services
 
         public void CycleNextClient(bool isForwards, SortedDictionary<int, string> cycleOrder)
         {
-            IOrderedEnumerable<KeyValuePair<int, string>> clientOrder;
-            if (isForwards)
-            {
-                clientOrder = cycleOrder.OrderBy(x => x.Key);
-            }
-            else
-            {
-                clientOrder = cycleOrder.OrderByDescending(x => x.Key);
-            }
+            IOrderedEnumerable<KeyValuePair<int, string>> clientOrder = isForwards
+                ? cycleOrder.OrderBy(x => x.Key)
+                : cycleOrder.OrderByDescending(x => x.Key);
 
             bool setNextClient = false;
-            IThumbnailView lastClient = null;
 
             foreach (var t in clientOrder)
             {
                 if (t.Value == _activeClient.Title)
                 {
                     setNextClient = true;
-                    lastClient = _thumbnailViews.FirstOrDefault(x => x.Value.Title == t.Value).Value;
                     continue;
                 }
 
@@ -139,9 +148,9 @@ namespace EveOPreview.Services
                     continue;
                 }
 
-                if (_thumbnailViews.Any(x => x.Value.Title == t.Value))
+                if (_thumbnailViewsByTitle.TryGetValue(t.Value, out var view))
                 {
-                    var ptr = _thumbnailViews.First(x => x.Value.Title == t.Value);
+                    var ptr = new KeyValuePair<IntPtr, IThumbnailView>(view.Id, view);
                     SetActive(ptr);
                     return;
                 }
@@ -150,9 +159,9 @@ namespace EveOPreview.Services
             // we didn't get a next one. just get the first one from the start.
             foreach (var t in clientOrder)
             {
-                if (_thumbnailViews.Any(x => x.Value.Title == t.Value))
+                if (_thumbnailViewsByTitle.TryGetValue(t.Value, out var view))
                 {
-                    var ptr = _thumbnailViews.First(x => x.Value.Title == t.Value);
+                    var ptr = new KeyValuePair<IntPtr, IThumbnailView>(view.Id, view);
                     SetActive(ptr);
                     _activeClient = (ptr.Key, t.Value);
                     return;
@@ -190,7 +199,8 @@ namespace EveOPreview.Services
             {
                 foreach (var hotkey in keys)
                 {
-                    if (e.KeyCode == hotkey)
+                    // 【核心绝杀】：必须使用 e.KeyData！只有 KeyData 才包含了 Ctrl/Alt/Shift 组合键的状态！
+                    if (e.KeyData == hotkey)
                     {
                         if (this._windowManager.IsCurrentlySwitching)
                         {
@@ -203,12 +213,13 @@ namespace EveOPreview.Services
                     }
                 }
             };
-            
+
             _keyboardMouseEvents.KeyUp += (sender, e) =>
             {
                 foreach (var hotkey in keys)
                 {
-                    if (e.KeyCode == hotkey)
+                    // 这里也必须同步修改为 KeyData
+                    if (e.KeyData == hotkey)
                     {
                         e.Handled = true;
                         return;
@@ -257,6 +268,8 @@ namespace EveOPreview.Services
                                             : this._configuration.LoginThumbnailLocation;
 
                 this._thumbnailViews.Add(view.Id, view);
+                this._thumbnailViewsByTitle[view.Title] = view;
+                this._knownClientHandles.Add(view.Id);
 
                 view.ThumbnailResized = this.ThumbnailViewResized;
                 view.ThumbnailMoved = this.ThumbnailViewMoved;
@@ -288,7 +301,9 @@ namespace EveOPreview.Services
                 if (process.Title != view.Title) // update thumbnail title
                 {
                     viewsRemoved.Add(view.Title);
+                    _thumbnailViewsByTitle.Remove(view.Title);
                     view.Title = process.Title;
+                    _thumbnailViewsByTitle[view.Title] = view;
                     viewsAdded.Add(view.Title);
 
                     view.RegisterHotkey(this._configuration.GetClientHotkey(process.Title));
@@ -302,6 +317,8 @@ namespace EveOPreview.Services
                 IThumbnailView view = this._thumbnailViews[process.Handle];
 
                 this._thumbnailViews.Remove(view.Id);
+                this._thumbnailViewsByTitle.Remove(view.Title);
+                this._knownClientHandles.Remove(view.Id);
                 if (view.Title != ThumbnailManager.DEFAULT_CLIENT_TITLE)
                 {
                     viewsRemoved.Add(view.Title);
@@ -611,7 +628,7 @@ namespace EveOPreview.Services
                     this.SwitchActiveClient(view.Id, view.Title);
                     this.UpdateClientLayouts();
                     this.RefreshThumbnails();
-                }, TaskScheduler.FromCurrentSynchronizationContext());
+                }, CancellationToken.None, TaskContinuationOptions.NotOnFaulted, TaskScheduler.FromCurrentSynchronizationContext());
         }
 
         private void ThumbnailDeactivated(IntPtr id, bool switchOut)
@@ -668,12 +685,18 @@ namespace EveOPreview.Services
                 return false;
             }
 
+            // Fast path: check if the handle is directly tracked
+            if (_knownClientHandles.Contains(windowHandle))
+            {
+                return true;
+            }
+
+            // Fallback: check each view's IsKnownHandle for overlay/handle matches
             foreach (KeyValuePair<IntPtr, IThumbnailView> entry in this._thumbnailViews)
             {
-                IThumbnailView view = entry.Value;
-
-                if (view.IsKnownHandle(windowHandle))
+                if (entry.Value.IsKnownHandle(windowHandle))
                 {
+                    _knownClientHandles.Add(windowHandle);
                     return true;
                 }
             }
@@ -911,22 +934,31 @@ namespace EveOPreview.Services
 
             lock (this._locationChangeNotificationSyncRoot)
             {
-                if (this._enqueuedLocationChangeNotification.Handle == IntPtr.Zero)
+                var notification = this._enqueuedLocationChangeNotification;
+                if (notification.Handle == IntPtr.Zero)
                 {
-                    this._enqueuedLocationChangeNotification = (view.Id, view.Title, activeClientTitle, view.ThumbnailLocation, ThumbnailManager.DEFAULT_LOCATION_CHANGE_NOTIFICATION_DELAY);
+                    notification.Handle = view.Id;
+                    notification.Title = view.Title;
+                    notification.ActiveClient = activeClientTitle;
+                    notification.Location = view.ThumbnailLocation;
+                    notification.Delay = ThumbnailManager.DEFAULT_LOCATION_CHANGE_NOTIFICATION_DELAY;
                     return;
                 }
 
                 // Reset the delay and exit
-                if ((this._enqueuedLocationChangeNotification.Handle == view.Id) &&
-                    (this._enqueuedLocationChangeNotification.ActiveClient == activeClientTitle))
+                if ((notification.Handle == view.Id) &&
+                    (notification.ActiveClient == activeClientTitle))
                 {
-                    this._enqueuedLocationChangeNotification.Delay = ThumbnailManager.DEFAULT_LOCATION_CHANGE_NOTIFICATION_DELAY;
+                    notification.Delay = ThumbnailManager.DEFAULT_LOCATION_CHANGE_NOTIFICATION_DELAY;
                     return;
                 }
 
-                this.RaiseThumbnailLocationUpdatedNotification(this._enqueuedLocationChangeNotification.Title);
-                this._enqueuedLocationChangeNotification = (view.Id, view.Title, activeClientTitle, view.ThumbnailLocation, ThumbnailManager.DEFAULT_LOCATION_CHANGE_NOTIFICATION_DELAY);
+                this.RaiseThumbnailLocationUpdatedNotification(notification.Title);
+                notification.Handle = view.Id;
+                notification.Title = view.Title;
+                notification.ActiveClient = activeClientTitle;
+                notification.Location = view.ThumbnailLocation;
+                notification.Delay = ThumbnailManager.DEFAULT_LOCATION_CHANGE_NOTIFICATION_DELAY;
             }
         }
 
@@ -936,20 +968,25 @@ namespace EveOPreview.Services
             {
                 change = (IntPtr.Zero, null, null, Point.Empty);
 
-                if (this._enqueuedLocationChangeNotification.Handle == IntPtr.Zero)
+                var notification = this._enqueuedLocationChangeNotification;
+                if (notification.Handle == IntPtr.Zero)
                 {
                     return false;
                 }
 
-                this._enqueuedLocationChangeNotification.Delay--;
+                notification.Delay--;
 
-                if (this._enqueuedLocationChangeNotification.Delay > 0)
+                if (notification.Delay > 0)
                 {
                     return false;
                 }
 
-                change = (this._enqueuedLocationChangeNotification.Handle, this._enqueuedLocationChangeNotification.Title, this._enqueuedLocationChangeNotification.ActiveClient, this._enqueuedLocationChangeNotification.Location);
-                this._enqueuedLocationChangeNotification = (IntPtr.Zero, null, null, Point.Empty, -1);
+                change = (notification.Handle, notification.Title, notification.ActiveClient, notification.Location);
+                notification.Handle = IntPtr.Zero;
+                notification.Title = null;
+                notification.ActiveClient = null;
+                notification.Location = Point.Empty;
+                notification.Delay = -1;
 
                 return true;
             }

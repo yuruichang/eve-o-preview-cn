@@ -26,6 +26,7 @@
             <ListBoxItem Content="缩略图"/>
             <ListBoxItem Content="缩放"/>
             <ListBoxItem Content="叠加层"/>
+            <ListBoxItem Content="分组管理"/>
             <ListBoxItem Content="活动客户端"/>
             <ListBoxItem Content="关于"/>
         </ListBox>
@@ -42,7 +43,6 @@
                 <TabItem>
                     <StackPanel Margin="5,0,5,5">
                         <TextBlock Text="常规设置" FontSize="22" FontWeight="Bold" Margin="0,0,0,25" Foreground="#24292E"/>
-
                         <CheckBox x:Name="MinimizeToTrayCheckBox" Content="最小化到系统托盘" FontSize="14" Margin="0,8" Foreground="#333333"/>
                         <CheckBox x:Name="ShowThumbnailsAlwaysOnTopCheckBox" Content="缩略图始终置顶 (总在最前)" FontSize="14" Margin="0,8" Foreground="#333333"/>
                         <CheckBox x:Name="HideThumbnailsOnLostFocusCheckBox" Content="失去焦点时隐藏缩略图" FontSize="14" Margin="0,8" Foreground="#333333"/>
@@ -55,36 +55,70 @@
 
                 <TabItem>
                     <StackPanel Margin="5,0,5,5">
-                        <TextBlock Text="缩略图设置" FontSize="22" FontWeight="Bold" Margin="0,0,0,30" Foreground="#24292E"/>
+                        <TextBlock Text="缩略图设置" FontSize="22" FontWeight="Bold" Margin="0,0,0,20" Foreground="#24292E"/>
 
-                        <TextBlock Text="缩略图不透明度" FontSize="15" FontWeight="SemiBold" Margin="0,0,0,12" Foreground="#444444"/>
-                        <StackPanel Orientation="Horizontal" Margin="0,0,0,35">
+                        <TextBlock Text="缩略图不透明度" FontSize="14" FontWeight="SemiBold" Margin="0,0,0,8" Foreground="#444444"/>
+                        <StackPanel Orientation="Horizontal" Margin="0,0,0,15">
                             <Slider x:Name="OpacitySlider" Minimum="10" Maximum="100" Value="100" Width="220" TickFrequency="1" IsSnapToTickEnabled="True" VerticalAlignment="Center"/>
-                            <TextBlock Text="{Binding ElementName=OpacitySlider, Path=Value, StringFormat={}{0}%}" FontSize="15" Margin="15,0,0,0" VerticalAlignment="Center" FontWeight="SemiBold" Foreground="#0366D6"/>
+                            <TextBlock Text="{Binding ElementName=OpacitySlider, Path=Value, StringFormat={}{0}%}" FontSize="14" Margin="15,0,0,0" VerticalAlignment="Center" FontWeight="SemiBold" Foreground="#0366D6"/>
                         </StackPanel>
 
-                        <TextBlock Text="缩略图尺寸 (宽 x 高)" FontSize="15" FontWeight="SemiBold" Margin="0,0,0,12" Foreground="#444444"/>
-                        <StackPanel Orientation="Horizontal">
-                            <TextBox x:Name="ThumbWidthText" Width="60" FontSize="14" TextAlignment="Center" Padding="4" BorderBrush="#D1D5DA"/>
+                        <TextBlock Text="缩略图尺寸 (宽 x 高)" FontSize="14" FontWeight="SemiBold" Margin="0,0,0,8" Foreground="#444444"/>
+                        <StackPanel Orientation="Horizontal" Margin="0,0,0,15">
+                            <TextBox x:Name="ThumbWidthText" Width="60" FontSize="14" TextAlignment="Center" Padding="3" BorderBrush="#D1D5DA"/>
                             <TextBlock Text=" ✕ " FontSize="16" Margin="10,0" VerticalAlignment="Center" Foreground="#959DA5"/>
-                            <TextBox x:Name="ThumbHeightText" Width="60" FontSize="14" TextAlignment="Center" Padding="4" BorderBrush="#D1D5DA"/>
+                            <TextBox x:Name="ThumbHeightText" Width="60" FontSize="14" TextAlignment="Center" Padding="3" BorderBrush="#D1D5DA"/>
                             <TextBlock Text="(修改后点击空白处生效)" Foreground="#6A737D" Margin="15,0,0,0" VerticalAlignment="Center" FontSize="12"/>
                         </StackPanel>
+
+                        <Separator Margin="0,5,0,12" Background="#E1E4E8"/>
+                        <TextBlock Text="缩略图位置布局预设" FontSize="15" FontWeight="Bold" Margin="0,0,0,6" Foreground="#24292E"/>
+                        <TextBlock Text="保存当前所有窗口的排布，以便快速一键切换位置" FontSize="11" Foreground="#6A737D" Margin="0,0,0,12"/>
+
+                        <Grid Margin="0,0,0,5">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+
+                            <ComboBox Grid.Column="0" x:Name="ProfileComboBox" IsEditable="True" Text="输入新名字或选择..." Margin="0,0,8,0" FontSize="12" VerticalContentAlignment="Center" Height="26"/>
+
+                            <Button Grid.Column="1" Content="保存" Width="50" Height="26" Margin="0,0,5,0" Click="SaveProfile_Click" Background="#0366D6" Foreground="White" BorderThickness="0" Cursor="Hand">
+                                <Button.Resources>
+                                    <Style TargetType="Border">
+                                        <Setter Property="CornerRadius" Value="3"/>
+                                    </Style>
+                                </Button.Resources>
+                            </Button>
+                            <Button Grid.Column="2" Content="读取" Width="50" Height="26" Margin="0,0,5,0" Click="LoadProfile_Click" Background="#28A745" Foreground="White" BorderThickness="0" Cursor="Hand">
+                                <Button.Resources>
+                                    <Style TargetType="Border">
+                                        <Setter Property="CornerRadius" Value="3"/>
+                                    </Style>
+                                </Button.Resources>
+                            </Button>
+                            <Button Grid.Column="3" Content="删除" Width="50" Height="26" Click="DeleteProfile_Click" Background="#D73A49" Foreground="White" BorderThickness="0" Cursor="Hand">
+                                <Button.Resources>
+                                    <Style TargetType="Border">
+                                        <Setter Property="CornerRadius" Value="3"/>
+                                    </Style>
+                                </Button.Resources>
+                            </Button>
+                        </Grid>
                     </StackPanel>
                 </TabItem>
 
                 <TabItem>
                     <StackPanel Margin="5,0,5,5">
                         <TextBlock Text="鼠标悬停缩放设置" FontSize="22" FontWeight="Bold" Margin="0,0,0,25" Foreground="#24292E"/>
-
                         <CheckBox x:Name="EnableThumbnailZoomCheckBox" Content="启用鼠标悬停时放大缩略图" FontSize="15" FontWeight="SemiBold" Margin="0,0,0,20" Foreground="#24292E"/>
-
                         <StackPanel x:Name="ZoomSettingsPanel" Margin="28,0,0,0" IsEnabled="{Binding ElementName=EnableThumbnailZoomCheckBox, Path=IsChecked}">
                             <StackPanel Orientation="Horizontal" Margin="0,0,0,25">
                                 <TextBlock Text="放大倍数: " FontSize="14" VerticalAlignment="Center" Foreground="#444444"/>
                                 <TextBox x:Name="ZoomFactorText" Width="55" FontSize="14" TextAlignment="Center" Padding="3" BorderBrush="#D1D5DA"/>
                             </StackPanel>
-
                             <TextBlock Text="放大时的对齐锚点:" FontSize="14" Margin="0,0,0,12" Foreground="#444444"/>
                             <Grid Width="150" HorizontalAlignment="Left">
                                 <Grid.RowDefinitions>
@@ -114,27 +148,112 @@
                 <TabItem>
                     <StackPanel Margin="5,0,5,5">
                         <TextBlock Text="叠加层与边框设置" FontSize="22" FontWeight="Bold" Margin="0,0,0,25" Foreground="#24292E"/>
-
                         <CheckBox x:Name="ShowThumbnailOverlaysCheckBox" Content="显示缩略图叠加层 (如角色名字)" FontSize="15" FontWeight="SemiBold" Margin="0,0,0,12" Foreground="#24292E"/>
-
                         <StackPanel Margin="28,0,0,25" IsEnabled="{Binding ElementName=ShowThumbnailOverlaysCheckBox, Path=IsChecked}">
                             <TextBlock Text="自定义叠加层字体与颜色:" FontSize="12" Foreground="#6A737D" Margin="0,0,0,6"/>
                             <StackPanel Orientation="Horizontal">
                                 <Button x:Name="ChangeFontButton" Content="修改字体与颜色..." Width="120" Height="26" FontSize="12" Cursor="Hand" Click="ChangeFontButton_Click" Background="#F3F4F6" BorderBrush="#D1D5DA"/>
-                                <TextBlock x:Name="FontPreviewText" Text="当前字体: 读取中..." FontSize="13" Margin="12,0,0,0" VerticalAlignment="Center" Foreground="#444444"/>
+                                    <TextBlock x:Name="FontPreviewText" Text="当前字体: 读取中..." FontSize="13" Margin="12,0,0,0" VerticalAlignment="Center" Foreground="#444444"/>
                             </StackPanel>
                         </StackPanel>
-
                         <Separator Margin="0,0,0,20" Background="#E1E4E8"/>
-
                         <CheckBox x:Name="ShowThumbnailFramesCheckBox" Content="显示缩略图外部边框" FontSize="15" FontWeight="SemiBold" Margin="0,0,0,15" Foreground="#24292E"/>
-
                         <CheckBox x:Name="EnableActiveClientHighlightCheckBox" Content="启用当前活动窗口的高亮边框" FontSize="15" FontWeight="SemiBold" Margin="0,0,0,12" Foreground="#24292E"/>
                         <StackPanel Orientation="Horizontal" Margin="28,0,0,0" IsEnabled="{Binding ElementName=EnableActiveClientHighlightCheckBox, Path=IsChecked}">
                             <TextBlock Text="高亮边框颜色: " FontSize="13" Foreground="#6A737D" VerticalAlignment="Center" Margin="0,0,10,0"/>
                             <Button x:Name="HighlightColorButton" Width="50" Height="22" BorderBrush="#D1D5DA" BorderThickness="1" Cursor="Hand" ToolTip="点击修改颜色"/>
                         </StackPanel>
                     </StackPanel>
+                </TabItem>
+
+                <TabItem>
+                    <Grid Margin="5,0,5,5">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="*"/>
+                        </Grid.RowDefinitions>
+
+                        <TextBlock Grid.Row="0" Text="分组循环管理" FontSize="18" FontWeight="Bold" Margin="0,0,0,8" Foreground="#24292E"/>
+                        <TextBlock Grid.Row="1" Text="在此管理客户端分组，通过快捷键在组内循环切换。" FontSize="11" Foreground="#6A737D" Margin="0,0,0,12"/>
+
+                        <Border Grid.Row="2" Background="White" BorderBrush="#E1E4E8" BorderThickness="1" CornerRadius="3">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="115"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+
+                                <Border Grid.Column="0" BorderBrush="#E1E4E8" BorderThickness="0,0,1,0">
+                                    <DockPanel>
+                                        <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" HorizontalAlignment="Center" Margin="5">
+                                            <Button Content="+" Width="30" Margin="2" Click="AddGroup_Click" ToolTip="新建分组"/>
+                                            <Button Content="-" Width="30" Margin="2" Click="RemoveGroup_Click" ToolTip="删除选中分组"/>
+                                        </StackPanel>
+                                        <ListBox x:Name="GroupsListBox" BorderThickness="0" Background="Transparent" DisplayMemberPath="Description" SelectionChanged="GroupsListBox_SelectionChanged"/>
+                                    </DockPanel>
+                                </Border>
+
+                                <Grid Grid.Column="1" x:Name="GroupDetailsPanel" IsEnabled="False" Margin="10,10">
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="*"/>
+                                    </Grid.RowDefinitions>
+
+                                    <Grid Grid.Row="0" Margin="0,0,0,12">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto"/>
+                                            <ColumnDefinition Width="*"/>
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Grid.Column="0" Text="分组名: " VerticalAlignment="Center" Foreground="#444444" Margin="0,0,5,0"/>
+                                        <TextBox Grid.Column="1" x:Name="GroupNameText" Padding="3" BorderBrush="#D1D5DA" LostFocus="GroupNameText_LostFocus"/>
+                                    </Grid>
+
+                                    <StackPanel Grid.Row="1" Margin="0,0,0,15">
+
+                                        <Grid Margin="0,0,0,8">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="Auto"/>
+                                                <ColumnDefinition Width="*"/>
+                                                <ColumnDefinition Width="Auto"/>
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock Grid.Column="0" Text="前翻键: " VerticalAlignment="Center" Foreground="#444444" Margin="0,0,5,0"/>
+                                            <TextBox Grid.Column="1" x:Name="GroupForwardHotKeyText" IsReadOnly="True" Text="录制..." PreviewKeyDown="GroupForwardHotKeyText_PreviewKeyDown" Background="#F8F9FA" BorderBrush="#D1D5DA" Padding="2,3"/>
+                                            <Button Grid.Column="2" Content="清除" Margin="6,0,0,0" Padding="6,2" Click="ClearForwardHotKey_Click" Background="#F3F4F6" BorderBrush="#D1D5DA"/>
+                                        </Grid>
+
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="Auto"/>
+                                                <ColumnDefinition Width="*"/>
+                                                <ColumnDefinition Width="Auto"/>
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock Grid.Column="0" Text="后翻键: " VerticalAlignment="Center" Foreground="#444444" Margin="0,0,5,0"/>
+                                            <TextBox Grid.Column="1" x:Name="GroupBackwardHotKeyText" IsReadOnly="True" Text="录制..." PreviewKeyDown="GroupBackwardHotKeyText_PreviewKeyDown" Background="#F8F9FA" BorderBrush="#D1D5DA" Padding="2,3"/>
+                                            <Button Grid.Column="2" Content="清除" Margin="6,0,0,0" Padding="6,2" Click="ClearBackwardHotKey_Click" Background="#F3F4F6" BorderBrush="#D1D5DA"/>
+                                        </Grid>
+
+                                        <TextBlock Text="* 提示：修改快捷键后，需重启本软件才能生效。" Foreground="#D83B01" FontSize="11" Margin="0,8,0,0" TextWrapping="Wrap"/>
+
+                                    </StackPanel>
+
+                                    <TextBlock Grid.Row="2" Text="包含的客户端 (勾选加入):" FontWeight="SemiBold" Foreground="#24292E" Margin="0,0,0,6"/>
+
+                                    <Border Grid.Row="3" BorderBrush="#E1E4E8" BorderThickness="1" CornerRadius="2">
+                                        <ListBox x:Name="GroupMembersListBox" BorderThickness="0" Background="Transparent" Padding="2">
+                                            <ListBox.ItemTemplate>
+                                                <DataTemplate>
+                                                    <CheckBox Content="{Binding Title}" IsChecked="{Binding IsInGroup}" Margin="2" Click="GroupMemberCheckBox_Click" Foreground="#333333"/>
+                                                </DataTemplate>
+                                            </ListBox.ItemTemplate>
+                                        </ListBox>
+                                    </Border>
+                                </Grid>
+                            </Grid>
+                        </Border>
+                    </Grid>
                 </TabItem>
 
                 <TabItem>
