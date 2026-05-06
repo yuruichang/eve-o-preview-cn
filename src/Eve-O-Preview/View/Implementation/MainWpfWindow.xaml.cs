@@ -2,18 +2,33 @@
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.ComponentModel;
 using System.Linq;
+using System.Runtime.CompilerServices;
 using System.Windows;
+using System.Windows.Data;
 using System.Windows.Interop;
 using WinForms = System.Windows.Forms;
 using WpfControls = System.Windows.Controls;
 
 namespace EveOPreview.View.Implementation
 {
-    public class ClientItem
+    public class ClientItem : INotifyPropertyChanged
     {
         public string Title { get; set; }
         public bool IsEnabled { get; set; }
+
+        public event PropertyChangedEventHandler PropertyChanged;
+        protected void OnPropertyChanged([CallerMemberName] string name = null)
+            => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
+    }
+
+    public class BooleanToVisibilityConverter : IValueConverter
+    {
+        public object Convert(object value, Type targetType, object parameter, System.Globalization.CultureInfo culture)
+            => (value is bool b && b) ? Visibility.Visible : Visibility.Collapsed;
+        public object ConvertBack(object value, Type targetType, object parameter, System.Globalization.CultureInfo culture)
+            => value is Visibility v && v == Visibility.Visible;
     }
 
     public partial class MainWpfWindow : System.Windows.Window, IMainFormView, WinForms.IWin32Window
@@ -277,7 +292,21 @@ namespace EveOPreview.View.Implementation
 
         public class GroupMemberItem : ClientItem
         {
-            public bool IsInGroup { get; set; }
+            private bool _isInGroup;
+            public bool IsInGroup
+            {
+                get => _isInGroup;
+                set { _isInGroup = value; OnPropertyChanged(); OnPropertyChanged(nameof(OrderDisplay)); }
+            }
+
+            private int _orderIndex;
+            public int OrderIndex
+            {
+                get => _orderIndex;
+                set { _orderIndex = value; OnPropertyChanged(); OnPropertyChanged(nameof(OrderDisplay)); }
+            }
+
+            public string OrderDisplay => IsInGroup ? $"{OrderIndex}." : "";
         }
 
         private void InitializeCycleGroups()
@@ -298,17 +327,30 @@ namespace EveOPreview.View.Implementation
             GroupForwardHotKeyText.Text = group.ForwardHotkeys.Count > 0 ? group.ForwardHotkeys[0] : "未设置";
             GroupBackwardHotKeyText.Text = group.BackwardHotkeys.Count > 0 ? group.BackwardHotkeys[0] : "未设置";
 
+            RefreshGroupMembers(group);
+            _suppressEvents = false;
+        }
+
+        private void RefreshGroupMembers(CycleGroup group)
+        {
+            var orderedClients = group.ClientsOrder.OrderBy(x => x.Key).ToList();
             var members = new List<GroupMemberItem>();
             foreach (var client in ActiveClientsList)
             {
+                var inGroup = group.ClientsOrder.ContainsValue(client.Title);
+                var orderIndex = 0;
+                if (inGroup)
+                {
+                    orderIndex = orderedClients.FindIndex(x => x.Value == client.Title) + 1;
+                }
                 members.Add(new GroupMemberItem
                 {
                     Title = client.Title,
-                    IsInGroup = group.ClientsOrder.ContainsValue(client.Title)
+                    IsInGroup = inGroup,
+                    OrderIndex = orderIndex
                 });
             }
             GroupMembersListBox.ItemsSource = members;
-            _suppressEvents = false;
         }
 
         private void AddGroup_Click(object sender, RoutedEventArgs e)
@@ -358,6 +400,51 @@ namespace EveOPreview.View.Implementation
                     group.ClientsOrder.Remove(target.Key);
                 }
             }
+            RefreshGroupMembers(group);
+            ApplicationSettingsChanged?.Invoke();
+        }
+
+        private void MoveClientUp_Click(object sender, RoutedEventArgs e)
+        {
+            if (!(GroupsListBox.SelectedItem is CycleGroup group)) return;
+            if (!(sender is WpfControls.Button btn)) return;
+            var member = btn.DataContext as GroupMemberItem;
+            if (member == null || !member.IsInGroup) return;
+
+            var ordered = group.ClientsOrder.OrderBy(x => x.Key).ToList();
+            var idx = ordered.FindIndex(x => x.Value == member.Title);
+            if (idx <= 0) return;
+
+            var current = ordered[idx];
+            var previous = ordered[idx - 1];
+            group.ClientsOrder.Remove(current.Key);
+            group.ClientsOrder.Remove(previous.Key);
+            group.ClientsOrder.Add(previous.Key, current.Value);
+            group.ClientsOrder.Add(current.Key, previous.Value);
+
+            RefreshGroupMembers(group);
+            ApplicationSettingsChanged?.Invoke();
+        }
+
+        private void MoveClientDown_Click(object sender, RoutedEventArgs e)
+        {
+            if (!(GroupsListBox.SelectedItem is CycleGroup group)) return;
+            if (!(sender is WpfControls.Button btn)) return;
+            var member = btn.DataContext as GroupMemberItem;
+            if (member == null || !member.IsInGroup) return;
+
+            var ordered = group.ClientsOrder.OrderBy(x => x.Key).ToList();
+            var idx = ordered.FindIndex(x => x.Value == member.Title);
+            if (idx < 0 || idx >= ordered.Count - 1) return;
+
+            var current = ordered[idx];
+            var next = ordered[idx + 1];
+            group.ClientsOrder.Remove(current.Key);
+            group.ClientsOrder.Remove(next.Key);
+            group.ClientsOrder.Add(next.Key, current.Value);
+            group.ClientsOrder.Add(current.Key, next.Value);
+
+            RefreshGroupMembers(group);
             ApplicationSettingsChanged?.Invoke();
         }
 

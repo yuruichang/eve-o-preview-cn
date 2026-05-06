@@ -1,12 +1,17 @@
 ﻿<Window x:Class="EveOPreview.View.Implementation.MainWpfWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="EVE-O Preview" Height="430" Width="540" 
-        MinWidth="540" MinHeight="430" 
+        xmlns:local="clr-namespace:EveOPreview.View.Implementation"
+        Title="EVE-O Preview" Height="430" Width="540"
+        MinWidth="540" MinHeight="430"
         WindowStartupLocation="CenterScreen"
         FontFamily="Microsoft YaHei"
         Background="#FFF6F8FA"
         ResizeMode="CanMinimize">
+
+    <Window.Resources>
+        <local:BooleanToVisibilityConverter x:Key="BoolToVisibility"/>
+    </Window.Resources>
 
     <Grid>
         <Grid.ColumnDefinitions>
@@ -245,7 +250,28 @@
                                         <ListBox x:Name="GroupMembersListBox" BorderThickness="0" Background="Transparent" Padding="2">
                                             <ListBox.ItemTemplate>
                                                 <DataTemplate>
-                                                    <CheckBox Content="{Binding Title}" IsChecked="{Binding IsInGroup}" Margin="2" Click="GroupMemberCheckBox_Click" Foreground="#333333"/>
+                                                    <Grid Margin="1,2">
+                                                        <Grid.ColumnDefinitions>
+                                                            <ColumnDefinition Width="26"/>
+                                                            <ColumnDefinition Width="*"/>
+                                                            <ColumnDefinition Width="Auto"/>
+                                                            <ColumnDefinition Width="Auto"/>
+                                                        </Grid.ColumnDefinitions>
+                                                        <TextBlock Grid.Column="0" Text="{Binding OrderDisplay}" VerticalAlignment="Center"
+                                                                   Foreground="#6A737D" FontSize="11" HorizontalAlignment="Right" Margin="0,0,3,0"/>
+                                                        <CheckBox Grid.Column="1" Content="{Binding Title}" IsChecked="{Binding IsInGroup}"
+                                                                  Click="GroupMemberCheckBox_Click" Foreground="#333333" VerticalAlignment="Center"/>
+                                                        <Button Grid.Column="2" Content="▲" Width="22" Height="20" Margin="1,0" Padding="0"
+                                                                Click="MoveClientUp_Click" ToolTip="上移"
+                                                                Visibility="{Binding IsInGroup, Converter={StaticResource BoolToVisibility}}"
+                                                                Background="Transparent" BorderBrush="Transparent" Foreground="#6A737D"
+                                                                FontSize="10"/>
+                                                        <Button Grid.Column="3" Content="▼" Width="22" Height="20" Margin="1,0" Padding="0"
+                                                                Click="MoveClientDown_Click" ToolTip="下移"
+                                                                Visibility="{Binding IsInGroup, Converter={StaticResource BoolToVisibility}}"
+                                                                Background="Transparent" BorderBrush="Transparent" Foreground="#6A737D"
+                                                                FontSize="10"/>
+                                                    </Grid>
                                                 </DataTemplate>
                                             </ListBox.ItemTemplate>
                                         </ListBox>
