@@ -334,7 +334,8 @@ namespace EveOPreview.View.Implementation
         private void RefreshGroupMembers(CycleGroup group)
         {
             var orderedClients = group.ClientsOrder.OrderBy(x => x.Key).ToList();
-            var members = new List<GroupMemberItem>();
+            var checkedMembers = new List<GroupMemberItem>();
+            var uncheckedMembers = new List<GroupMemberItem>();
             foreach (var client in ActiveClientsList)
             {
                 var inGroup = group.ClientsOrder.ContainsValue(client.Title);
@@ -343,14 +344,18 @@ namespace EveOPreview.View.Implementation
                 {
                     orderIndex = orderedClients.FindIndex(x => x.Value == client.Title) + 1;
                 }
-                members.Add(new GroupMemberItem
+                var item = new GroupMemberItem
                 {
                     Title = client.Title,
                     IsInGroup = inGroup,
                     OrderIndex = orderIndex
-                });
+                };
+                if (inGroup)
+                    checkedMembers.Add(item);
+                else
+                    uncheckedMembers.Add(item);
             }
-            GroupMembersListBox.ItemsSource = members;
+            GroupMembersListBox.ItemsSource = checkedMembers.OrderBy(m => m.OrderIndex).Concat(uncheckedMembers).ToList();
         }
 
         private void AddGroup_Click(object sender, RoutedEventArgs e)
