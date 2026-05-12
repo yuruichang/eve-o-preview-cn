@@ -12,7 +12,7 @@
     <AssemblyName>EVE-O Preview</AssemblyName>
     <TargetFrameworkVersion>v4.8</TargetFrameworkVersion>
     <TargetFrameworkProfile />
-    <RuntimeIdentifiers>win</RuntimeIdentifiers>
+    <RuntimeIdentifiers>win;win-x64</RuntimeIdentifiers>
     <NuGetPackageRoot Condition=" '$(NuGetPackageRoot)' == '' ">$(NUGET_PACKAGES)</NuGetPackageRoot>
     <NuGetPackageRoot Condition=" '$(NuGetPackageRoot)' == '' ">$(UserProfile)\.nuget\packages\</NuGetPackageRoot>
     <GenerateResourceUsePreserializedResources>true</GenerateResourceUsePreserializedResources>
@@ -103,6 +103,7 @@
     <Reference Include="System.Drawing" />
     <Reference Include="System.IO" />
     <Reference Include="System.Linq.Expressions" />
+    <Reference Include="System.Net.Http" />
     <Reference Include="System.Runtime" />
     <Reference Include="System.Threading.Tasks" />
     <Reference Include="System.Windows.Forms" />

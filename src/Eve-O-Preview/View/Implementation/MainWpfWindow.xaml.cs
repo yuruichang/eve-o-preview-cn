@@ -572,9 +572,28 @@ namespace EveOPreview.View.Implementation
             }
         }
 
+	    private string _latestReleaseUrl;
+
         public string ClientNote { get => ClientNoteText.Text ?? ""; set { _suppressEvents = true; ClientNoteText.Text = value ?? ""; _suppressEvents = false; } }
         public void SetVersionInfo(string version) => Dispatcher.Invoke(() => VersionTextBlock.Text = $"版本: {version}");
-        public void DocsButton_Click(object sender, RoutedEventArgs e) => DocumentationLinkActivated?.Invoke();
+
+        public void ShowUpdateAvailable(string latestVersionTag)
+        {
+            Dispatcher.Invoke(() =>
+            {
+                UpdateButton.Content = $"发现新版本 {latestVersionTag}，点击更新";
+                _latestReleaseUrl = $"https://github.com/yuruichang/eve-o-preview-cn/releases/tag/{latestVersionTag}";
+                UpdateButton.Visibility = Visibility.Visible;
+            });
+        }
+
+        public void UpdateButton_Click(object sender, RoutedEventArgs e)
+        {
+            if (!string.IsNullOrEmpty(_latestReleaseUrl))
+            {
+                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(_latestReleaseUrl) { UseShellExecute = true });
+            }
+        }
         public List<string> SavedLayoutProfiles
         {
             get => ProfileComboBox.ItemsSource as List<string>;

@@ -3,17 +3,21 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Drawing;
 using System.Linq;
+using System.Net.Http;
 using EveOPreview.Configuration;
 using EveOPreview.Mediator.Messages;
 using EveOPreview.View;
 using MediatR;
+using Newtonsoft.Json.Linq;
 
 namespace EveOPreview.Presenters
 {
     public class MainFormPresenter : Presenter<IMainFormView>, IMainFormPresenter
     {
         #region Private constants
-        private const string DISCORD_URL = @"https://discord.gg/HzQHBtTEcB";
+        private const string GITHUB_API_URL = @"https://api.github.com/repos/yuruichang/eve-o-preview-cn/releases/latest";
+        private const string GITHUB_RELEASES_URL = @"https://github.com/yuruichang/eve-o-preview-cn/releases";
+        private static readonly Version CURRENT_VERSION = new Version(2, 2, 0);
         #endregion
 
         #region Private fields
@@ -44,7 +48,6 @@ namespace EveOPreview.Presenters
             this.View.ApplicationSettingsChanged = this.SaveApplicationSettings;
             this.View.ThumbnailsSizeChanged = this.UpdateThumbnailsSize;
             this.View.ThumbnailStateChanged = this.UpdateThumbnailState;
-            this.View.DocumentationLinkActivated = this.OpenDocumentationLink;
             this.View.ApplicationExitRequested = this.ExitApplication;
             this.View.GetClientNameFromInput = this.GetClientDescriptionFromInputBox;
 
@@ -77,13 +80,13 @@ namespace EveOPreview.Presenters
         {
             this._suppressSizeNotifications = true;
             this.LoadApplicationSettings();
-            this.View.SetDocumentationUrl(MainFormPresenter.DISCORD_URL);
             this.View.SetVersionInfo(this.GetApplicationVersion());
             if (this._configuration.MinimizeToTray)
             {
                 this.View.Minimize();
             }
 
+            _ = CheckForUpdateAsync();
             this._mediator.Send(new StartService());
             this._suppressSizeNotifications = false;
         }
@@ -266,16 +269,38 @@ namespace EveOPreview.Presenters
             return input.SelectedClientName;
         }
 
-        private void OpenDocumentationLink()
+        private async System.Threading.Tasks.Task CheckForUpdateAsync()
         {
-            ProcessStartInfo processStartInfo = new ProcessStartInfo(new Uri(MainFormPresenter.DISCORD_URL).AbsoluteUri);
-            Process.Start(processStartInfo);
+            try
+            {
+                using (var httpClient = new HttpClient())
+                {
+                    httpClient.DefaultRequestHeaders.UserAgent.ParseAdd($"EVE-O-Preview/{CURRENT_VERSION}");
+                    httpClient.Timeout = TimeSpan.FromSeconds(5);
+
+                    string json = await httpClient.GetStringAsync(GITHUB_API_URL);
+                    JObject release = JObject.Parse(json);
+                    string latestTag = release["tag_name"]?.ToString();
+
+                    if (!string.IsNullOrEmpty(latestTag) && latestTag.StartsWith("v"))
+                    {
+                        string versionStr = latestTag.Substring(1);
+                        if (Version.TryParse(versionStr, out Version latestVersion) && latestVersion > CURRENT_VERSION)
+                        {
+                            this.View.ShowUpdateAvailable(latestTag);
+                        }
+                    }
+                }
+            }
+            catch
+            {
+                // Network error or parse error — silently ignore
+            }
         }
 
         private string GetApplicationVersion()
         {
-            Version version = System.Reflection.Assembly.GetEntryAssembly().GetName().Version;
-            return $"{version.Major}.{version.Minor}.{version.Build}";
+            return $"{CURRENT_VERSION.Major}.{CURRENT_VERSION.Minor}.{CURRENT_VERSION.Build}";
         }
 
         private void ExitApplication()

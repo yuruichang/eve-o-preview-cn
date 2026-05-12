@@ -319,15 +319,18 @@
                 <TabItem>
                     <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
                         <TextBlock Text="EVE-O Preview" FontSize="34" FontWeight="Bold" Foreground="#24292E" HorizontalAlignment="Center" Margin="0,0,0,10"/>
-                        <TextBlock x:Name="VersionTextBlock" Text="版本: 读取中..." FontSize="14" Foreground="#6A737D" HorizontalAlignment="Center" Margin="0,0,0,30"/>
-                        <Button x:Name="DocsButton" Content="打开官方Discord" Width="200" Height="34" FontSize="14" Cursor="Hand" Click="DocsButton_Click" Background="#0366D6" Foreground="White" BorderThickness="0">
+                        <TextBlock x:Name="VersionTextBlock" Text="版本: 读取中..." FontSize="14" Foreground="#6A737D" HorizontalAlignment="Center" Margin="0,0,0,8"/>
+                        <Button x:Name="UpdateButton" Content="发现新版本，点击更新" Width="220" Height="30" FontSize="13" Cursor="Hand"
+                                Click="UpdateButton_Click" Visibility="Collapsed"
+                                Background="#2EA44F" Foreground="White" BorderThickness="0" Margin="0,0,0,25">
                             <Button.Resources>
                                 <Style TargetType="Border">
                                     <Setter Property="CornerRadius" Value="4"/>
                                 </Style>
                             </Button.Resources>
                         </Button>
-                        <TextBlock Text="—— 已注入 WPF 现代化界面引擎 ——" FontSize="12" Foreground="#D1D5DA" HorizontalAlignment="Center" Margin="0,45,0,0"/>
+                        <TextBlock Text="感谢原作者: Viir (EVE-O Preview)" FontSize="11" Foreground="#959DA5" HorizontalAlignment="Center" Margin="0,10,0,0"/>
+                        <TextBlock Text="—— 已注入 WPF 现代化界面引擎 ——" FontSize="12" Foreground="#D1D5DA" HorizontalAlignment="Center" Margin="0,8,0,0"/>
                     </StackPanel>
                 </TabItem>
             </TabControl>
